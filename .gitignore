@@ -173,3 +173,5 @@ node_modules/
 registeredUsers.json
 registeredUsersFlask.json
 phonebook/tools/phonebook_mobile.py
+flask-auth-app/client_secret_744419703652-c0f3gm09a771ur4aotfnhs471glghuus.apps.googleusercontent.com.json
+virus_total_scan.py

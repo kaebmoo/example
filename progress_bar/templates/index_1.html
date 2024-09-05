@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Progress Bar Test</title>
+    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.4.1/semantic.min.css">
+</head>
+<body>
+    <div class="ui progress" id="upload">
+        <div class="bar">
+            <div class="progress"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.4.1/semantic.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            var x = new EventSource('/progress');
+            var source = new EventSource("{{ url_for('sse.stream') }}")
+            console.log('/progress')
+            
+            // เพิ่ม event listener สำหรับ event type 'progress'
+            source.addEventListener('progress', function(event) {
+                var data = JSON.parse(event.data);
+                // console.log(data)
+                console.log(data.progress)
+                // อัปเดตค่า data-percent และ style ของ .bar
+                $('#upload').progress({
+                    percent: data.progress
+                });
+
+                if (data.progress === 'complete') {
+                    console.log("Close")
+                    x.close();
+                    source.close();
+                };
+            }, false);
+
+            source.onerror = function(error) {
+                console.error('EventSource failed:', error);
+            };
+
+            x.onerror = function(error) {
+                console.error('First EventSource failed:', error);
+            };
+
+        });
+    </script>
+</body>
+</html>

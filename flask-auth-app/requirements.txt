@@ -1,0 +1,4 @@
+Flask 
+Authlib 
+Flask-Login
+google-api-python-client
