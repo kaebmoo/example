@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from enum import Enum
+import hashlib
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
@@ -48,6 +49,18 @@ class User(Base):
     # ความสัมพันธ์กับ Attendance
     attendances = relationship("Attendance", back_populates="user")
 
+# คลาสสำหรับรับข้อมูล request ใน API
+class UserRequest(BaseModel):
+    """
+    คลาส Pydantic สำหรับรับข้อมูลผู้ใช้ที่ต้องการตรวจสอบ
+    
+    Attributes:
+        username (str): ชื่อผู้ใช้ที่ต้องการตรวจสอบ
+        password (str): รหัสผ่านที่ต้องการตรวจสอบ
+    """
+    username: str
+    password: str
+
 class Attendance(Base):
     """โมเดล Attendance สำหรับเก็บเวลาการเข้า-ออกงาน"""
     __tablename__ = "attendance"
@@ -76,10 +89,68 @@ async def get_db():
 
 # ฟังก์ชันแปลงเวลา UTC เป็นเวลาท้องถิ่น
 def convert_utc_to_local(utc_dt):
+    """ฟังก์ชันแปลงเวลา UTC เป็นเวลาท้องถิ่น"""
     local_tz = pytz.timezone('Asia/Bangkok')  # ตั้งค่าเป็นเขตเวลา UTC+7
     local_dt = utc_dt.astimezone(local_tz)
     return local_dt
 
+# ฟังก์ชันสำหรับแปลงรหัสผ่านเป็น SHA-256 hash
+def verify_password_sha256(plain_password: str, hashed_password: str) -> bool:
+    """
+    แปลงรหัสผ่านเป็น SHA-256 hash และตรวจสอบว่าตรงกับค่า hash ที่จัดเก็บหรือไม่
+    
+    Args:
+        plain_password (str): รหัสผ่านที่ยังไม่ได้เข้ารหัส
+        hashed_password (str): รหัสผ่านที่ถูกเข้ารหัสแล้ว (ในรูปแบบ SHA-256)
+
+    Returns:
+        bool: True หากรหัสผ่านที่แปลงแล้วตรงกับ hashed_password, False หากไม่ตรง
+    """
+    hashed_input = hashlib.sha256(plain_password.encode()).hexdigest()
+    return hashed_input == hashed_password
+
+# ฟังก์ชันสำหรับตรวจสอบผู้ใช้
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[User]:
+    """
+    ตรวจสอบว่าผู้ใช้และรหัสผ่านที่ให้มาตรงกับข้อมูลที่จัดเก็บในฐานข้อมูลหรือไม่
+
+    Args:
+        db (AsyncSession): เซสชันฐานข้อมูลสำหรับการเรียกข้อมูล
+        username (str): ชื่อผู้ใช้ที่ต้องการตรวจสอบ
+        password (str): รหัสผ่านที่ต้องการตรวจสอบ (ยังไม่ได้เข้ารหัส)
+
+    Returns:
+        Optional[User]: คืนค่าผู้ใช้หากตรวจสอบสำเร็จ, None หากข้อมูลไม่ถูกต้อง
+    """
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalars().first()
+
+    # ตรวจสอบรหัสผ่านกับ SHA-256
+    if user and verify_password_sha256(password, user.hashed_password):
+        return user
+    return None
+
+# API สำหรับตรวจสอบผู้ใช้
+@app.post("/check_user/")
+async def check_user(user_request: UserRequest, db: AsyncSession = Depends(get_db)):
+    """
+    API สำหรับตรวจสอบว่าผู้ใช้มีอยู่ในระบบหรือไม่และตรวจสอบรหัสผ่านของผู้ใช้
+
+    Args:
+        user_request (UserRequest): ข้อมูลผู้ใช้ที่ประกอบด้วย username และ password
+        db (AsyncSession): เซสชันฐานข้อมูลสำหรับการเรียกข้อมูล
+
+    Returns:
+        dict: คืนค่า {"status": "User exists"} หากผู้ใช้และรหัสผ่านถูกต้อง
+        HTTPException: ส่งกลับข้อผิดพลาด 400 หากชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
+    """
+    user = await authenticate_user(db, user_request.username, user_request.password)
+    
+    if user:
+        return {"status": "User exists"}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+    
 # ฟังก์ชันตรวจสอบสถานะการลงเวลา
 def calculate_attendance_status(check_in_time: datetime, check_out_time: Optional[datetime] = None):
     """
@@ -115,12 +186,12 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
     Returns:
         dict: ผลการบันทึกเวลาเข้างานและสถานะการลงเวลา
     """
-    # ตรวจสอบว่า user มีอยู่หรือไม่
+    # ตรวจสอบว่า user มีอยู่หรือไม่ โดยใช้ exists()
     stmt = select(exists().where(User.username == attendance_request.username))
     result = await db.execute(stmt)
-    user = result.scalar()
+    user_exists = result.scalar()
 
-    if not user:
+    if not user_exists:
         raise HTTPException(status_code=404, detail="User not found")
     
     # ดึงข้อมูล check_in ของผู้ใช้ในวันนี้
@@ -145,7 +216,8 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
 
     status = calculate_attendance_status(check_in_time)
 
-    new_attendance = Attendance(username=user.username, check_in=check_in_time, status=status.value)
+    # ใช้ username ที่ได้รับจาก attendance_request โดยตรง
+    new_attendance = Attendance(username=attendance_request.username, check_in=check_in_time, status=status.value)
     db.add(new_attendance)
     await db.commit()
     await db.refresh(new_attendance)
@@ -158,6 +230,7 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
         "check_in": local_check_in_time.isoformat(),  # ส่งกลับในรูปแบบ ISO และแสดงเวลาท้องถิ่น
         "attendance_status": status.value
     }
+
 
 @app.post("/check_out/")
 async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = Depends(get_db)):
