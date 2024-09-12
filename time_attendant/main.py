@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 import hashlib
+import logging
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,8 +27,18 @@ DATABASE_NAME = os.getenv("DATABASE_NAME")
 DATABASE_URL = f"postgresql+asyncpg://{DATABASE_USER}:{DATABASE_PASSWORD}@{DATABASE_HOST}/{DATABASE_NAME}"
 
 Base = declarative_base()
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False, 
+    pool_size=30,  # เพิ่มจำนวน connection pool เป็น 20
+    max_overflow=10,  # อนุญาตให้เพิ่ม connection ได้อีก 10 ครั้งเมื่อ pool เต็ม
+    pool_timeout=60  # ระยะเวลารอ connection ใหม่ (วินาที)
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+
+# ปิดการแสดงผล logging ระดับ INFO และ DEBUG สำหรับ SQLAlchemy
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
 # สร้างแอป FastAPI
 app = FastAPI()
@@ -86,7 +97,11 @@ class AttendanceRequest(BaseModel):
 async def get_db():
     """Dependency สำหรับสร้าง session"""
     async with SessionLocal() as session:
-        yield session
+        try:
+            yield session  # ทำงานกับ session
+        finally:
+            await session.close()  # ปิด session หลังจากใช้งานเสร็จ
+
 
 # ฟังก์ชันแปลงเวลา UTC เป็นเวลาท้องถิ่น
 def convert_utc_to_local(utc_dt):
@@ -150,7 +165,7 @@ async def check_user(user_request: UserRequest, db: AsyncSession = Depends(get_d
     if user:
         return {"status": "User exists"}
     else:
-        raise HTTPException(status_code=400, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     
 # ฟังก์ชันตรวจสอบสถานะการลงเวลา
 def calculate_attendance_status(check_in_time: datetime, check_out_time: Optional[datetime] = None):
@@ -187,6 +202,7 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
     Returns:
         dict: ผลการบันทึกเวลาเข้างานและสถานะการลงเวลา
     """
+    logging.debug(f"Received request data: {attendance_request}")
     # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
     user = await authenticate_user(db, attendance_request.username, attendance_request.password)
     
@@ -208,7 +224,12 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
 
     # ตรวจสอบว่าในวันเดียวกันมีการ check_in แล้วหรือไม่
     if attendance:
-        raise HTTPException(status_code=400, detail="Already checked in today")
+        # raise HTTPException(status_code=400, detail="Already checked in today")
+        return {
+            "status": "already_checked_in",
+            "message": "You have already checked in today.",
+            "check_in_time": attendance.check_in.isoformat()  # แสดงเวลาที่เช็คอินแล้ว
+        }
 
     # บันทึกเวลา check_in
     check_in_time = (attendance_request.check_in or datetime.now(timezone.utc)).replace(tzinfo=None)
@@ -241,6 +262,7 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
     Returns:
         dict: ผลการบันทึกเวลาออกงานและสถานะการลงเวลา
     """
+    logging.debug(f"Received request data: {attendance_request}")
     # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
     user = await authenticate_user(db, attendance_request.username, attendance_request.password)
     
@@ -258,7 +280,7 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
     
     # ตรวจสอบว่ามีการ check_in ก่อนหน้านี้หรือไม่
     if not attendance:
-        raise HTTPException(status_code=400, detail="Check-in not found")
+        raise HTTPException(status_code=404, detail="Check-in not found")
 
     # แปลง check_out_time เป็น timezone-naive ก่อนบันทึกลงฐานข้อมูล
     check_out_time = (attendance_request.check_out or datetime.now(timezone.utc)).replace(tzinfo=None)
@@ -271,7 +293,8 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
 
     # ตรวจสอบว่า check_out_time น้อยกว่า check_in_time หรือไม่
     if check_out_time <= check_in_time_naive:
-        raise HTTPException(status_code=400, detail="Check-out time must be after check-in time")
+        raise HTTPException(status_code=422, detail="Check-out time must be after check-in time")
+
 
     # อัปเดตข้อมูล check_out และสถานะ
     attendance.check_out = check_out_time

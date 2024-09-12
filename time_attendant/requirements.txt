@@ -6,3 +6,4 @@ asyncpg
 greenlet
 pytz
 python-dotenv
+redis
