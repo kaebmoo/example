@@ -78,6 +78,7 @@ class Attendance(Base):
 class AttendanceRequest(BaseModel):
     """โมเดลสำหรับ request body สำหรับการลงเวลา"""
     username: str
+    password: str
     check_in: Optional[datetime] = None
     check_out: Optional[datetime] = None
 
@@ -186,13 +187,11 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
     Returns:
         dict: ผลการบันทึกเวลาเข้างานและสถานะการลงเวลา
     """
-    # ตรวจสอบว่า user มีอยู่หรือไม่ โดยใช้ exists()
-    stmt = select(exists().where(User.username == attendance_request.username))
-    result = await db.execute(stmt)
-    user_exists = result.scalar()
-
-    if not user_exists:
-        raise HTTPException(status_code=404, detail="User not found")
+    # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
+    user = await authenticate_user(db, attendance_request.username, attendance_request.password)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Invalid username or password")
     
     # ดึงข้อมูล check_in ของผู้ใช้ในวันนี้
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
@@ -216,8 +215,7 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
 
     status = calculate_attendance_status(check_in_time)
 
-    # ใช้ username ที่ได้รับจาก attendance_request โดยตรง
-    new_attendance = Attendance(username=attendance_request.username, check_in=check_in_time, status=status.value)
+    new_attendance = Attendance(username=user.username, check_in=check_in_time, status=status.value)
     db.add(new_attendance)
     await db.commit()
     await db.refresh(new_attendance)
@@ -231,7 +229,6 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
         "attendance_status": status.value
     }
 
-
 @app.post("/check_out/")
 async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -244,6 +241,12 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
     Returns:
         dict: ผลการบันทึกเวลาออกงานและสถานะการลงเวลา
     """
+    # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
+    user = await authenticate_user(db, attendance_request.username, attendance_request.password)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Invalid username or password")
+    
     # ดึงข้อมูลการ check_in ล่าสุดของผู้ใช้
     result = await db.execute(
         select(Attendance)
@@ -285,7 +288,6 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
         "check_out": local_check_out_time.isoformat(),  # ส่งกลับในรูปแบบ ISO พร้อมเวลาท้องถิ่น
         "attendance_status": status.value
     }
-
 
 if __name__ == "__main__":
     import uvicorn
