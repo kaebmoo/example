@@ -1,0 +1,8 @@
+sqlalchemy
+fastapi
+passlib
+uvicorn
+asyncpg
+greenlet
+pytz
+python-dotenv
