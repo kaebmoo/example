@@ -2,8 +2,11 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 import hashlib
+import json
 import logging
+import redis
 from typing import Optional
+import pandas as pd
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, exists
@@ -11,11 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base
 import os
 import pytz
 
 # โหลดค่าตัวแปรจากไฟล์ .env
 load_dotenv()
+
+# Initialize Redis connection
+redis_client = redis.Redis(host='localhost', port=6379, db=1)
 
 # ดึงค่าจากไฟล์ .env
 DATABASE_USER = os.getenv("DATABASE_USER")
@@ -30,9 +37,9 @@ Base = declarative_base()
 engine = create_async_engine(
     DATABASE_URL, 
     echo=False, 
-    pool_size=30,  # เพิ่มจำนวน connection pool เป็น 20
-    max_overflow=10,  # อนุญาตให้เพิ่ม connection ได้อีก 10 ครั้งเมื่อ pool เต็ม
-    pool_timeout=60  # ระยะเวลารอ connection ใหม่ (วินาที)
+    pool_size=120,  # เพิ่มจำนวน connection pool 
+    max_overflow=20,  # อนุญาตให้เพิ่ม connection ได้อีก 10 ครั้งเมื่อ pool เต็ม
+    pool_timeout=120  # ระยะเวลารอ connection ใหม่ (วินาที)
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
@@ -93,6 +100,27 @@ class AttendanceRequest(BaseModel):
     check_in: Optional[datetime] = None
     check_out: Optional[datetime] = None
 
+# โหลดข้อมูลจาก CSV
+users_data = pd.read_csv("/Users/seal/Downloads/Unique_Usernames_and_Hashed_Passwords.csv", dtype=str)
+
+def preload_users_to_redis():
+    """
+    ฟังก์ชันสำหรับ preload ข้อมูล Username และ Hashed_Password จาก CSV ลงใน Redis
+    """
+    for index, row in users_data.iterrows():
+        username = row['Username']
+        hashed_password = row['Hashed_Password']
+        
+        # สร้างข้อมูลในรูปแบบ dictionary
+        user_data = {
+            "username": username,
+            "hashed_password": hashed_password
+        }
+        
+        # แปลงเป็น JSON string และเก็บลง Redis โดยใช้ username เป็น key
+        redis_client.set(f"user:{username}", json.dumps(user_data))
+        
+
 # Dependency สำหรับสร้าง session
 async def get_db():
     """Dependency สำหรับสร้าง session"""
@@ -127,6 +155,60 @@ def verify_password_sha256(plain_password: str, hashed_password: str) -> bool:
 
 # ฟังก์ชันสำหรับตรวจสอบผู้ใช้
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[User]:
+    """
+    ตรวจสอบว่าผู้ใช้และรหัสผ่านที่ให้มาตรงกับข้อมูลที่จัดเก็บในฐานข้อมูลหรือไม่
+
+    Args:
+        db (AsyncSession): เซสชันฐานข้อมูลสำหรับการเรียกข้อมูล
+        username (str): ชื่อผู้ใช้ที่ต้องการตรวจสอบ
+        password (str): รหัสผ่านที่ต้องการตรวจสอบ (ยังไม่ได้เข้ารหัส)
+
+    Returns:
+        Optional[User]: คืนค่าผู้ใช้หากตรวจสอบสำเร็จ, None หากข้อมูลไม่ถูกต้อง
+    """
+    # Check if the user data is already cached in Redis
+    cached_user = redis_client.get(f"user:{username}")
+    
+    if cached_user:
+        try:
+            logging.info("Cache hit for user: %s", username)
+            # Deserialize JSON string to a dictionary
+            user_data = json.loads(cached_user)
+            user = User(**user_data)  # Convert the dictionary back to a User object
+        except json.JSONDecodeError:
+            logging.error("Failed to decode cached data for user: %s, invalid JSON.", username)
+            # If there's an error in decoding, remove the cached data and refetch from DB
+            redis_client.delete(f"user:{username}")
+            user = None
+    else:
+        logging.info("Cache miss for user: %s, fetching from DB.", username)
+        # Fetch the user from the database if not cached
+        result = await db.execute(select(User).where(User.username == username))
+        user = result.scalars().first()
+        
+        # If user exists, cache it in Redis for 5 minutes (300 seconds)
+        if user:
+            # Convert the user object to a dictionary (excluding internal state)
+            user_data = {
+                "id": user.id,
+                "username": user.username,
+                "hashed_password": user.hashed_password,
+            }
+            logging.info("Caching user: %s", username)
+            # Serialize the dictionary to JSON and store in Redis
+            redis_client.setex(f"user:{username}", 300, json.dumps(user_data))
+    
+    # Verify password
+    if user and verify_password_sha256(password, user.hashed_password):
+        logging.info("Password verified for user: %s", username)
+        return user
+    else:
+        logging.warning("Invalid password for user: %s", username)
+    
+    return None
+
+# ฟังก์ชันสำหรับตรวจสอบผู้ใช้
+async def authenticate_user_(db: AsyncSession, username: str, password: str) -> Optional[User]:
     """
     ตรวจสอบว่าผู้ใช้และรหัสผ่านที่ให้มาตรงกับข้อมูลที่จัดเก็บในฐานข้อมูลหรือไม่
 
@@ -202,14 +284,24 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
     Returns:
         dict: ผลการบันทึกเวลาเข้างานและสถานะการลงเวลา
     """
-    logging.debug(f"Received request data: {attendance_request}")
     # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
     user = await authenticate_user(db, attendance_request.username, attendance_request.password)
     
     if not user:
         raise HTTPException(status_code=404, detail="Invalid username or password")
     
-    # ดึงข้อมูล check_in ของผู้ใช้ในวันนี้
+    # ตรวจสอบการ check_in ใน Redis ก่อน
+    cached_attendance = redis_client.get(f"attendance:checkin:{attendance_request.username}")
+    if cached_attendance:
+        logging.info("Cache hit for attendance check-in: %s", attendance_request.username)
+        cached_data = json.loads(cached_attendance)
+        return {
+            "status": "already_checked_in",
+            "message": "You have already checked in today.",
+            "check_in_time": cached_data["check_in_time"]
+        }
+    
+    # ดึงข้อมูล check_in ของผู้ใช้ในวันนี้จากฐานข้อมูล
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
     today_end = (today_start + timedelta(days=1)).replace(tzinfo=None)
 
@@ -224,7 +316,6 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
 
     # ตรวจสอบว่าในวันเดียวกันมีการ check_in แล้วหรือไม่
     if attendance:
-        # raise HTTPException(status_code=400, detail="Already checked in today")
         return {
             "status": "already_checked_in",
             "message": "You have already checked in today.",
@@ -236,13 +327,21 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
 
     status = calculate_attendance_status(check_in_time)
 
-    new_attendance = Attendance(username=user.username, check_in=check_in_time, status=status.value)
+    new_attendance = Attendance(username=str(user.username), check_in=check_in_time, status=status.value)
+
     db.add(new_attendance)
     await db.commit()
     await db.refresh(new_attendance)
     
     # แปลงเวลาเป็นเวลาท้องถิ่นก่อนส่งกลับ
     local_check_in_time = convert_utc_to_local(new_attendance.check_in)
+
+    # แคชข้อมูล check_in ใน Redis
+    attendance_data = {
+        "check_in_time": local_check_in_time.isoformat(),
+        "status": status.value
+    }
+    redis_client.setex(f"attendance:checkin:{attendance_request.username}", 86400, json.dumps(attendance_data))  # แคชเป็นเวลา 1 วัน
     
     return {
         "status": "Check-in successful",
@@ -250,6 +349,7 @@ async def check_in(attendance_request: AttendanceRequest, db: AsyncSession = Dep
         "attendance_status": status.value
     }
 
+# API สำหรับบันทึกเวลาออกงาน
 @app.post("/check_out/")
 async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -262,14 +362,25 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
     Returns:
         dict: ผลการบันทึกเวลาออกงานและสถานะการลงเวลา
     """
-    logging.debug(f"Received request data: {attendance_request}")
+
     # ตรวจสอบว่า user มีอยู่และตรวจสอบ password
     user = await authenticate_user(db, attendance_request.username, attendance_request.password)
     
     if not user:
         raise HTTPException(status_code=404, detail="Invalid username or password")
     
-    # ดึงข้อมูลการ check_in ล่าสุดของผู้ใช้
+    # ตรวจสอบการ check_out ใน Redis ก่อน
+    cached_attendance = redis_client.get(f"attendance:checkout:{attendance_request.username}")
+    if cached_attendance:
+        logging.info("Cache hit for attendance check-out: %s", attendance_request.username)
+        cached_data = json.loads(cached_attendance)
+        return {
+            "status": "already_checked_out",
+            "message": "You have already checked out today.",
+            "check_out_time": cached_data["check_out_time"]
+        }
+
+    # ดึงข้อมูลการ check_in ล่าสุดของผู้ใช้จากฐานข้อมูล
     result = await db.execute(
         select(Attendance)
         .where(Attendance.username == attendance_request.username)
@@ -306,12 +417,22 @@ async def check_out(attendance_request: AttendanceRequest, db: AsyncSession = De
     # แปลงเวลาจาก UTC เป็นเวลาท้องถิ่นก่อนส่งกลับ
     local_check_out_time = convert_utc_to_local(attendance.check_out)
 
+    # แคชข้อมูล check_out ใน Redis
+    attendance_data = {
+        "check_out_time": local_check_out_time.isoformat(),
+        "status": status.value
+    }
+    redis_client.setex(f"attendance:checkout:{attendance_request.username}", 86400, json.dumps(attendance_data))  # แคชเป็นเวลา 1 วัน
+
     return {
         "status": "Check-out successful",
         "check_out": local_check_out_time.isoformat(),  # ส่งกลับในรูปแบบ ISO พร้อมเวลาท้องถิ่น
         "attendance_status": status.value
     }
 
+
 if __name__ == "__main__":
     import uvicorn
+    preload_users_to_redis()
+    print("Preloaded all users to Redis")
     uvicorn.run(app, host="127.0.0.1", port=2000)
