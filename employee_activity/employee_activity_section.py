@@ -1,0 +1,362 @@
+import pandas as pd
+import pulp
+import numpy as np
+
+# อ่านข้อมูลจากไฟล์ CSV
+def assign_single_activity_from_csv(input_file, output_file, individual_weight=0.7, section_weight=0.3):
+    # อ่านข้อมูลจาก CSV file
+    df = pd.read_csv(input_file)
+    
+    # ดึงข้อมูลพนักงานและกิจกรรมทั้งหมด
+    employees = df['EMPLOYEE_ID'].unique().tolist()
+    employee_names = df.groupby('EMPLOYEE_ID')['NAME'].first().to_dict()
+    activities = df['Activity'].unique().tolist()
+    
+    # สร้าง dictionary ของสัดส่วนกิจกรรมของแต่ละพนักงาน
+    employee_activities = {}
+    for emp_id in employees:
+        emp_df = df[df['EMPLOYEE_ID'] == emp_id]
+        emp_name = emp_df['NAME'].iloc[0]
+        
+        # สร้าง dictionary ของกิจกรรมและสัดส่วนสำหรับพนักงานคนนี้
+        activities_dict = {row['Activity']: row['Values'] for _, row in emp_df.iterrows()}
+        
+        # เติมกิจกรรมที่พนักงานไม่ได้ทำด้วยค่า 0
+        for act in activities:
+            if act not in activities_dict:
+                activities_dict[act] = 0.0
+                
+        employee_activities[emp_id] = {
+            'name': emp_name,
+            'activities': activities_dict
+        }
+    
+    # คำนวณสัดส่วนกิจกรรมในภาพรวมของส่วนงาน
+    total_activities = {activity: 0 for activity in activities}
+    for emp_id, emp_data in employee_activities.items():
+        for act, value in emp_data['activities'].items():
+            total_activities[act] += value
+    
+    total_sum = sum(total_activities.values())
+    activity_ratios = {act: val/total_sum for act, val in total_activities.items()}
+    
+    # คำนวณเป้าหมายจำนวนพนักงานในแต่ละกิจกรรม
+    num_employees = len(employees)
+    target_employees = {act: round(num_employees * ratio) for act, ratio in activity_ratios.items()}
+    
+    print(f"จำนวนพนักงานทั้งหมด: {num_employees} คน")
+    print(f"เป้าหมายจำนวนพนักงานในแต่ละกิจกรรม: {target_employees}")
+    
+    # กำหนดเงื่อนไขพิเศษ - พนักงานที่เลือกกิจกรรมเดียวด้วยสัดส่วน 100%
+    special_assignments = {}
+    for emp_id, emp_data in employee_activities.items():
+        max_val = max(emp_data['activities'].values())
+        if max_val == 1.0:
+            for act, val in emp_data['activities'].items():
+                if val == 1.0:
+                    special_assignments[emp_id] = act
+                    print(f"พนักงานพิเศษ: {emp_data['name']} ({emp_id}) ต้องทำกิจกรรม {act}")
+    
+    # คะแนนของแต่ละการมอบหมาย
+    scores = {}
+    for emp_id in employees:
+        for act in activities:
+            ind_score = employee_activities[emp_id]['activities'].get(act, 0) * individual_weight
+            sec_score = activity_ratios.get(act, 0) * section_weight
+            scores[(emp_id, act)] = ind_score + sec_score
+    
+    # สร้างโมเดล
+    model = pulp.LpProblem("Employee_Assignment", pulp.LpMaximize)
+    
+    # สร้างตัวแปรตัดสินใจ
+    x = pulp.LpVariable.dicts("assign", 
+                             [(emp_id, act) for emp_id in employees for act in activities], 
+                             cat='Binary')
+    
+    # กำหนดฟังก์ชันวัตถุประสงค์
+    model += pulp.lpSum(scores[(emp_id, act)] * x[(emp_id, act)] for emp_id in employees for act in activities)
+    
+    # กำหนดข้อจำกัด - พนักงานแต่ละคนได้รับมอบหมายกิจกรรมเดียว
+    for emp_id in employees:
+        model += pulp.lpSum(x[(emp_id, act)] for act in activities) == 1
+    
+    # ตรวจสอบว่าจำนวนพนักงานทั้งหมดพอดีกับผลรวมของเป้าหมาย
+    total_target = sum(target_employees.values())
+    if total_target != num_employees:
+        print(f"คำเตือน: จำนวนพนักงานทั้งหมด ({num_employees}) ไม่เท่ากับผลรวมของเป้าหมาย ({total_target})")
+        
+        # ปรับเป้าหมายให้รวมเท่ากับจำนวนพนักงานทั้งหมด
+        # หากมีปัญหาในการแก้ปัญหา อาจต้องปรับเปลี่ยนวิธีนี้
+        diff = num_employees - total_target
+        if diff > 0:
+            # ถ้ามีพนักงานมากเกินไป เพิ่มเป้าหมายให้กับกิจกรรมที่มีสัดส่วนมากที่สุด
+            sorted_acts = sorted(activity_ratios.items(), key=lambda x: x[1], reverse=True)
+            target_employees[sorted_acts[0][0]] += diff
+        else:
+            # ถ้ามีพนักงานน้อยเกินไป ลดเป้าหมายจากกิจกรรมที่มีสัดส่วนน้อยที่สุด
+            sorted_acts = sorted(activity_ratios.items(), key=lambda x: x[1])
+            for i in range(len(sorted_acts)):
+                act = sorted_acts[i][0]
+                if target_employees[act] >= abs(diff):
+                    target_employees[act] += diff  # diff เป็นลบอยู่แล้ว
+                    break
+                else:
+                    diff += target_employees[act]  # เพิ่มค่าเข้าไป (diff < 0)
+                    target_employees[act] = 0
+        
+        print(f"เป้าหมายจำนวนพนักงานที่ปรับแล้ว: {target_employees}")
+    
+    # กำหนดข้อจำกัด - จำนวนพนักงานที่ได้รับมอบหมายกิจกรรมเท่ากับเป้าหมาย
+    for act in activities:
+        if target_employees[act] > 0:  # เฉพาะกิจกรรมที่ต้องการพนักงาน
+            model += pulp.lpSum(x[(emp_id, act)] for emp_id in employees) == target_employees[act]
+    
+    # เพิ่มข้อจำกัดสำหรับพนักงานที่มีเงื่อนไขพิเศษ
+    for emp_id, act in special_assignments.items():
+        model += x[(emp_id, act)] == 1
+    
+    # แก้ปัญหา
+    solver_status = model.solve()
+    
+    # ตรวจสอบว่าแก้ปัญหาสำเร็จหรือไม่
+    if solver_status != pulp.LpStatusOptimal:
+        print(f"ไม่สามารถหาคำตอบที่เหมาะสมได้ สถานะ: {pulp.LpStatus[solver_status]}")
+        
+        # ถ้าแก้ปัญหาไม่สำเร็จ ใช้วิธี greedy algorithm แทน
+        return use_greedy_algorithm(employee_activities, activities, activity_ratios, 
+                                   special_assignments, output_file, individual_weight, section_weight)
+    
+    # รวบรวมผลลัพธ์
+    results = []
+    for emp_id in employees:
+        emp_data = employee_activities[emp_id]
+        assigned_activity = None
+        
+        for act in activities:
+            if pulp.value(x[(emp_id, act)]) == 1:
+                assigned_activity = act
+                break
+        
+        if assigned_activity:
+            original_value = emp_data['activities'].get(assigned_activity, 0)
+            score = scores.get((emp_id, assigned_activity), 0)
+            
+            results.append({
+                'EMPLOYEE_ID': emp_id,
+                'NAME': emp_data['name'],
+                'ASSIGNED_ACTIVITY': assigned_activity,
+                'ORIGINAL_VALUE': original_value,
+                'SCORE': score
+            })
+    
+    # สร้าง DataFrame จากผลลัพธ์และบันทึกลงไฟล์ CSV
+    result_df = pd.DataFrame(results)
+    
+    # สร้าง DataFrame เพิ่มเติมเพื่อแสดงรายละเอียดกิจกรรมเดิมของพนักงาน
+    activity_details = []
+    for emp_id in employees:
+        emp_data = employee_activities[emp_id]
+        
+        # หากิจกรรมที่ได้รับมอบหมาย
+        assigned = next((r['ASSIGNED_ACTIVITY'] for r in results if r['EMPLOYEE_ID'] == emp_id), None)
+        
+        # สร้างข้อความรายละเอียดกิจกรรมเดิม
+        activity_str = ", ".join([f"{act} ({val*100:.0f}%)" for act, val in emp_data['activities'].items() if val > 0])
+        
+        activity_details.append({
+            'EMPLOYEE_ID': emp_id,
+            'NAME': emp_data['name'],
+            'ORIGINAL_ACTIVITIES': activity_str,
+            'ASSIGNED_ACTIVITY': assigned
+        })
+    
+    activity_df = pd.DataFrame(activity_details)
+    
+    # สรุปจำนวนพนักงานในแต่ละกิจกรรม
+    assigned_counts = result_df['ASSIGNED_ACTIVITY'].value_counts().to_dict()
+    summary = []
+    for act in activities:
+        count = assigned_counts.get(act, 0)
+        target = target_employees.get(act, 0)
+        ratio = activity_ratios.get(act, 0)
+        
+        summary.append({
+            'ACTIVITY': act,
+            'ASSIGNED_COUNT': count,
+            'TARGET_COUNT': target,
+            'SECTION_RATIO': ratio,
+            'MATCHING': count == target
+        })
+    
+    summary_df = pd.DataFrame(summary)
+    
+    # คำนวณความตรงกับกิจกรรมที่พนักงานทำมากที่สุด
+    match_count = 0
+    for emp_id in employees:
+        emp_data = employee_activities[emp_id]
+        # หากิจกรรมที่มีสัดส่วนมากที่สุด
+        max_act = max(emp_data['activities'].items(), key=lambda x: x[1])[0]
+        # หากิจกรรมที่ได้รับมอบหมาย
+        assigned = next((r['ASSIGNED_ACTIVITY'] for r in results if r['EMPLOYEE_ID'] == emp_id), None)
+        
+        if max_act == assigned:
+            match_count += 1
+    
+    match_percent = (match_count / num_employees) * 100
+    print(f"พนักงานที่ได้รับมอบหมายตรงกับกิจกรรมที่ทำมากที่สุด: {match_count}/{num_employees} ({match_percent:.2f}%)")
+    
+    # บันทึกข้อมูลลงไฟล์ CSV
+    result_df.to_csv(output_file, index=False)
+    activity_df.to_csv(output_file.replace('.csv', '_details.csv'), index=False)
+    summary_df.to_csv(output_file.replace('.csv', '_summary.csv'), index=False)
+    
+    print(f"บันทึกผลลัพธ์ลงไฟล์ {output_file}, {output_file.replace('.csv', '_details.csv')} และ {output_file.replace('.csv', '_summary.csv')} เรียบร้อยแล้ว")
+    
+    return result_df, activity_df, summary_df
+
+# ฟังก์ชันใช้วิธี greedy algorithm ในกรณีที่ linear programming ไม่สามารถหาคำตอบได้
+def use_greedy_algorithm(employee_activities, activities, activity_ratios, special_assignments, output_file,
+                         individual_weight=0.7, section_weight=0.3):
+    print("ใช้วิธี Greedy Algorithm แทน")
+    
+    employees = list(employee_activities.keys())
+    num_employees = len(employees)
+    
+    # คำนวณเป้าหมายจำนวนพนักงานในแต่ละกิจกรรม
+    target_employees = {act: round(num_employees * ratio) for act, ratio in activity_ratios.items()}
+    
+    # คำนวณคะแนนสำหรับแต่ละการมอบหมาย
+    scores = {}
+    for emp_id, emp_data in employee_activities.items():
+        scores[emp_id] = {}
+        for act in activities:
+            ind_score = emp_data['activities'].get(act, 0) * individual_weight
+            sec_score = activity_ratios.get(act, 0) * section_weight
+            scores[emp_id][act] = ind_score + sec_score
+    
+    # มอบหมายกิจกรรมให้กับพนักงานที่มีเงื่อนไขพิเศษก่อน
+    assigned_employees = set()
+    assigned_activities = {act: 0 for act in activities}
+    assignments = {}
+    
+    for emp_id, act in special_assignments.items():
+        assignments[emp_id] = act
+        assigned_employees.add(emp_id)
+        assigned_activities[act] += 1
+    
+    # สร้าง priority queue ของทุกการมอบหมายที่เป็นไปได้
+    all_assignments = []
+    for emp_id in employees:
+        if emp_id not in assigned_employees:  # เฉพาะพนักงานที่ยังไม่ได้รับมอบหมาย
+            for act in activities:
+                all_assignments.append({
+                    'emp_id': emp_id,
+                    'activity': act,
+                    'score': scores[emp_id][act]
+                })
+    
+    # เรียงลำดับตามคะแนน (จากมากไปน้อย)
+    all_assignments.sort(key=lambda x: x['score'], reverse=True)
+    
+    # มอบหมายกิจกรรมให้กับพนักงานที่เหลือ
+    for assignment in all_assignments:
+        emp_id = assignment['emp_id']
+        act = assignment['activity']
+        
+        if emp_id in assigned_employees:
+            continue  # พนักงานคนนี้ได้รับมอบหมายแล้ว
+        
+        # ตรวจสอบว่ากิจกรรมนี้ยังต้องการพนักงานเพิ่มหรือไม่
+        if assigned_activities[act] < target_employees[act]:
+            assignments[emp_id] = act
+            assigned_employees.add(emp_id)
+            assigned_activities[act] += 1
+    
+    # หากยังมีพนักงานที่ไม่ได้รับมอบหมาย ให้มอบหมายตามคะแนนสูงสุด
+    for emp_id in employees:
+        if emp_id not in assigned_employees:
+            # หากิจกรรมที่มีคะแนนสูงสุดสำหรับพนักงานคนนี้
+            best_act = max(scores[emp_id].items(), key=lambda x: x[1])[0]
+            assignments[emp_id] = best_act
+            assigned_activities[best_act] += 1
+    
+    # สร้างผลลัพธ์
+    results = []
+    for emp_id, act in assignments.items():
+        emp_data = employee_activities[emp_id]
+        original_value = emp_data['activities'].get(act, 0)
+        score = scores[emp_id][act]
+        
+        results.append({
+            'EMPLOYEE_ID': emp_id,
+            'NAME': emp_data['name'],
+            'ASSIGNED_ACTIVITY': act,
+            'ORIGINAL_VALUE': original_value,
+            'SCORE': score
+        })
+    
+    # สร้าง DataFrame และบันทึกลงไฟล์ CSV (เหมือนฟังก์ชันหลัก)
+    result_df = pd.DataFrame(results)
+    
+    # สร้าง DataFrame เพิ่มเติม (เหมือนฟังก์ชันหลัก)
+    activity_details = []
+    for emp_id in employees:
+        emp_data = employee_activities[emp_id]
+        assigned = assignments.get(emp_id)
+        
+        activity_str = ", ".join([f"{act} ({val*100:.0f}%)" for act, val in emp_data['activities'].items() if val > 0])
+        
+        activity_details.append({
+            'EMPLOYEE_ID': emp_id,
+            'NAME': emp_data['name'],
+            'ORIGINAL_ACTIVITIES': activity_str,
+            'ASSIGNED_ACTIVITY': assigned
+        })
+    
+    activity_df = pd.DataFrame(activity_details)
+    
+    # สรุปจำนวนพนักงานในแต่ละกิจกรรม
+    assigned_counts = {act: 0 for act in activities}
+    for _, act in assignments.items():
+        assigned_counts[act] = assigned_counts.get(act, 0) + 1
+    
+    summary = []
+    for act in activities:
+        count = assigned_counts.get(act, 0)
+        target = target_employees.get(act, 0)
+        ratio = activity_ratios.get(act, 0)
+        
+        summary.append({
+            'ACTIVITY': act,
+            'ASSIGNED_COUNT': count,
+            'TARGET_COUNT': target,
+            'SECTION_RATIO': ratio,
+            'MATCHING': count == target
+        })
+    
+    summary_df = pd.DataFrame(summary)
+    
+    # บันทึกข้อมูลลงไฟล์ CSV
+    result_df.to_csv(output_file, index=False)
+    activity_df.to_csv(output_file.replace('.csv', '_details.csv'), index=False)
+    summary_df.to_csv(output_file.replace('.csv', '_summary.csv'), index=False)
+    
+    print(f"บันทึกผลลัพธ์ลงไฟล์ {output_file}, {output_file.replace('.csv', '_details.csv')} และ {output_file.replace('.csv', '_summary.csv')} เรียบร้อยแล้ว")
+    
+    return result_df, activity_df, summary_df
+
+# สามารถรันโค้ดนี้โดยเรียกใช้ฟังก์ชัน assign_single_activity_from_csv
+if __name__ == "__main__":
+    # กำหนดค่าน้ำหนักในการคำนวณตามต้องการ
+    INDIVIDUAL_WEIGHT = 0.7  # น้ำหนักของสัดส่วนงานของพนักงาน
+    SECTION_WEIGHT = 0.3     # น้ำหนักของสัดส่วนภาพรวมของส่วนงาน
+    
+    # เรียกใช้ฟังก์ชัน
+    input_file = "/Users/seal/Library/CloudStorage/OneDrive-Personal/share/Datasource/2025/activity/employee_activity_2025_Angthong.csv"  # ไฟล์ข้อมูลนำเข้า
+    output_file = "/Users/seal/Library/CloudStorage/OneDrive-Personal/share/Datasource/2025/activity/employee_assignments_Angthong.csv"  # ไฟล์ผลลัพธ์
+    assign_single_activity_from_csv(
+        input_file=input_file,     # ไฟล์ข้อมูลนำเข้า
+        output_file=output_file,   # ไฟล์ผลลัพธ์
+        individual_weight=INDIVIDUAL_WEIGHT,
+        section_weight=SECTION_WEIGHT
+    )
