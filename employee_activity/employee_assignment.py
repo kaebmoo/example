@@ -644,12 +644,14 @@ if __name__ == "__main__":
 # สามารถรันโค้ดนี้โดยเรียกใช้ฟังก์ชัน assign_activities_by_section
 if __name__ == "__main__":
     # กำหนดค่าน้ำหนักในการคำนวณตามต้องการ
-    INDIVIDUAL_WEIGHT = 0.7  # น้ำหนักของสัดส่วนงานของพนักงาน
-    SECTION_WEIGHT = 0.3     # น้ำหนักของสัดส่วนภาพรวมของส่วนงาน
+    INDIVIDUAL_WEIGHT = 0.1  # น้ำหนักของสัดส่วนงานของพนักงาน
+    SECTION_WEIGHT = 0.9     # น้ำหนักของสัดส่วนภาพรวมของส่วนงาน
     
+    all_data = "/Users/seal/Library/CloudStorage/OneDrive-Personal/share/Datasource/2025/activity/employee_activity_2025.csv"
+    # '/Users/seal/Documents/ฝ่ายระบบบริการลูกค้า 1 (ลทท.).csv'
     # เรียกใช้ฟังก์ชันหลัก
     assign_activities_by_section(
-        input_file='/Users/seal/Documents/ฝ่ายระบบบริการลูกค้า 1 (ลทท.).csv',     # ไฟล์ข้อมูลนำเข้า
+        input_file=all_data,     # ไฟล์ข้อมูลนำเข้า
         output_dir="results",                     # โฟลเดอร์ที่จะเก็บผลลัพธ์
         individual_weight=INDIVIDUAL_WEIGHT,
         section_weight=SECTION_WEIGHT
