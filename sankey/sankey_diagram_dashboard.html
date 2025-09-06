@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Dimensional Sankey Diagram Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://unpkg.com/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #444;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .label-badge {
+            background: #667eea;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        select, input[type="file"] {
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        select:hover, input[type="file"]:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .dimension-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .dimension-btn {
+            padding: 12px 20px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            text-align: center;
+            color: #333;
+        }
+
+        .dimension-btn:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+            transform: translateY(-2px);
+        }
+
+        .dimension-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .visualization {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            min-height: 700px;
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 700px;
+            display: block;
+        }
+
+        .sankey-link {
+            fill: none;
+            stroke-opacity: 0.5;
+            transition: stroke-opacity 0.3s;
+        }
+
+        .sankey-link:hover {
+            stroke-opacity: 0.8;
+        }
+
+        .sankey-node rect {
+            cursor: pointer;
+            fill-opacity: .9;
+            shape-rendering: crispEdges;
+            transition: fill-opacity 0.3s;
+        }
+
+        .sankey-node rect:hover {
+            fill-opacity: 1;
+        }
+
+        .sankey-node text {
+            pointer-events: none;
+            font-size: 12px;
+            fill: #333;
+            text-shadow: 0 1px 0 #fff;
+        }
+
+        .viz-tooltip {
+            position: fixed;
+            text-align: left;
+            padding: 12px;
+            font-size: 13px;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10000;
+            max-width: 350px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .viz-tooltip strong {
+            color: #a5b4fc;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .viz-tooltip .amount {
+            color: #fbbf24;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .viz-tooltip .percent {
+            color: #86efac;
+            font-size: 12px;
+        }
+
+        .info-panel {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info-panel h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .stat-card h4 {
+            color: #666;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card p {
+            color: #333;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 15px;
+            background: #fafafa;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 10px;
+            background: white;
+            border-radius: 6px;
+            font-size: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #dc2626;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .visualization {
+            animation: fadeIn 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔀 Multi-Dimensional Sankey Diagram Dashboard</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="fileInput">
+                    📁 Upload CSV File:
+                </label>
+                <input type="file" id="fileInput" accept=".csv">
+            </div>
+            
+            <div class="control-group">
+                <label for="filterProviderLine">
+                    🏢 สายงานผู้ให้บริการ:
+                </label>
+                <select id="filterProviderLine" onchange="updateVisualization()">
+                    <option value="">ทั้งหมด</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterProviderDept">
+                    📋 ฝ่ายผู้ให้บริการ:
+                </label>
+                <select id="filterProviderDept" onchange="updateVisualization()">
+                    <option value="">ทั้งหมด</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterReceiverLine">
+                    🏛️ สายงานผู้รับบริการ:
+                </label>
+                <select id="filterReceiverLine" onchange="updateVisualization()">
+                    <option value="">ทั้งหมด</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterReceiverDept">
+                    📊 ฝ่ายผู้รับบริการ:
+                </label>
+                <select id="filterReceiverDept" onchange="updateVisualization()">
+                    <option value="">ทั้งหมด</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterService">
+                    🎯 บริการ:
+                </label>
+                <select id="filterService" onchange="updateVisualization()">
+                    <option value="">ทั้งหมด</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="minAmount">
+                    💰 จำนวนเงินขั้นต่ำ:
+                </label>
+                <select id="minAmount" onchange="updateVisualization()">
+                    <option value="0">ทั้งหมด</option>
+                    <option value="10000">≥ 10,000 บาท</option>
+                    <option value="50000">≥ 50,000 บาท</option>
+                    <option value="100000">≥ 100,000 บาท</option>
+                    <option value="500000">≥ 500,000 บาท</option>
+                    <option value="1000000">≥ 1,000,000 บาท</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="dimension-selector">
+            <button class="dimension-btn active" onclick="setDimension('provider-service-receiver', event)">
+                ผู้ให้ → บริการ → ผู้รับ
+            </button>
+            <button class="dimension-btn" onclick="setDimension('provider-receiver', event)">
+                ผู้ให้ → ผู้รับ (Direct)
+            </button>
+            <button class="dimension-btn" onclick="setDimension('service-provider-receiver', event)">
+                บริการ → ผู้ให้ → ผู้รับ
+            </button>
+            <button class="dimension-btn" onclick="setDimension('providerline-service-receiverline', event)">
+                สายงานผู้ให้ → บริการ → สายงานผู้รับ
+            </button>
+            <button class="dimension-btn" onclick="setDimension('service-flow', event)">
+                บริการ → ผู้ให้/ผู้รับ
+            </button>
+            <button class="dimension-btn" onclick="setDimension('hierarchical', event)">
+                สายงาน → ฝ่าย → บริการ
+            </button>
+        </div>
+        
+        <div class="info-panel">
+            <h3>📈 Data Summary</h3>
+            <div class="stats">
+                <div class="stat-card">
+                    <h4>Total Records</h4>
+                    <p id="totalRecords">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Amount</h4>
+                    <p id="totalAmount">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Nodes</h4>
+                    <p id="totalNodes">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Links</h4>
+                    <p id="totalLinks">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Avg Transaction</h4>
+                    <p id="avgTransaction">0</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="visualization" id="vizContainer">
+            <div class="loading">Please upload a CSV file to begin visualization</div>
+        </div>
+
+        <div class="legend" id="legendContainer"></div>
+    </div>
+
+    <script>
+        // Global variables
+        let tooltip = null;
+        let currentDimension = 'provider-service-receiver';
+        let rawData = [];
+        let currentData = [];
+        
+        // Sample data for demonstration
+        rawData = [
+            {
+                "สายงานผู้ให้บริการ": "กรรมการผู้จัดการใหญ่",
+                "ฝ่ายผู้ให้บริการ": "ฝ่ายสื่อสัญญาณพื้นที่ 1",
+                "สายงานผู้รับบริการ": "สายงานดิจิทัลและโซลูชั่น",
+                "ฝ่ายผู้รับบริการ": "ฝ่ายผลิตภัณฑ์คลาวด์และบิ๊กดาต้า",
+                "บริการ": "DWDM (สื่อสัญญาณ)",
+                "บริการย่อย": "Protection - 10G - Size M",
+                "จำนวนเงิน (PxQ)": "95380.00"
+            },
+            {
+                "สายงานผู้ให้บริการ": "กรรมการผู้จัดการใหญ่",
+                "ฝ่ายผู้ให้บริการ": "ฝ่ายสื่อสัญญาณพื้นที่ 1",
+                "สายงานผู้รับบริการ": "สายงานดิจิทัลและโซลูชั่น",
+                "ฝ่ายผู้รับบริการ": "ฝ่ายผลิตภัณฑ์คลาวด์และบิ๊กดาต้า",
+                "บริการ": "DWDM (สื่อสัญญาณ)",
+                "บริการย่อย": "Protection - 10G - Size SS",
+                "จำนวนเงิน (PxQ)": "238086.00"
+            }
+        ];
+
+        // Initialize tooltip
+        document.addEventListener('DOMContentLoaded', function() {
+            tooltip = d3.select('body')
+                .append('div')
+                .attr('class', 'viz-tooltip')
+                .style('opacity', 0);
+            
+            currentData = [...rawData];
+            updateFilters();
+            updateVisualization();
+        });
+
+        // Helper functions
+        function parseThaiNumber(str) {
+            if (!str) return 0;
+            return parseFloat(str.toString().replace(/,/g, '')) || 0;
+        }
+
+        function formatThaiNumber(num) {
+            return num.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        }
+
+        function showTooltip(content, event) {
+            if (!tooltip) return;
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', .95);
+            tooltip.html(content)
+                .style('left', (event.clientX + 10) + 'px')
+                .style('top', (event.clientY - 28) + 'px');
+        }
+
+        function hideTooltip() {
+            if (!tooltip) return;
+            tooltip.transition()
+                .duration(500)
+                .style('opacity', 0);
+        }
+
+        // Color schemes
+        const providerColor = d3.scaleOrdinal()
+            .range(['#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#ede9fe']);
+        
+        const serviceColor = d3.scaleOrdinal()
+            .range(['#06b6d4', '#22d3ee', '#67e8f9', '#a5f3fc', '#cffafe']);
+        
+        const receiverColor = d3.scaleOrdinal()
+            .range(['#f59e0b', '#fbbf24', '#fcd34d', '#fde68a', '#fef3c7']);
+
+        const linkColor = d3.scaleOrdinal()
+            .range(['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9']);
+
+        // File reader
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    parseCSV(event.target.result);
+                };
+                reader.readAsText(file, 'UTF-8');
+            }
+        });
+
+        // Parse CSV
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n').filter(line => line.trim());
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            rawData = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                const obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = values[index] || '';
+                });
+                rawData.push(obj);
+                // ================== ✨ CODE DEBUG START ✨ ==================
+                if (rawData.length > 0) {
+                    console.log("Headers ที่โปรแกรมอ่านได้:", Object.keys(rawData[0]));
+                    console.log("ข้อมูล 2 แถวแรกที่อ่านได้:", rawData.slice(0, 2));
+                }
+                // =================== ✨ CODE DEBUG END ✨ ===================
+            }
+            
+            currentData = [...rawData];
+            updateFilters();
+            updateVisualization();
+        }
+
+        // Update filters
+        function updateFilters() {
+            // Provider Line filter
+            const providerLines = [...new Set(currentData.map(d => d['สายงานผู้ให้บริการ']))].filter(Boolean);
+            const providerLineSelect = document.getElementById('filterProviderLine');
+            const currentProviderLine = providerLineSelect.value;
+            providerLineSelect.innerHTML = '<option value="">ทั้งหมด</option>';
+            providerLines.forEach(line => {
+                const option = document.createElement('option');
+                option.value = line;
+                option.textContent = line;
+                if (line === currentProviderLine) option.selected = true;
+                providerLineSelect.appendChild(option);
+            });
+
+            // Provider Dept filter
+            const providerDepts = [...new Set(currentData.map(d => d['ฝ่ายผู้ให้บริการ']))].filter(Boolean);
+            const providerDeptSelect = document.getElementById('filterProviderDept');
+            const currentProviderDept = providerDeptSelect.value;
+            providerDeptSelect.innerHTML = '<option value="">ทั้งหมด</option>';
+            providerDepts.forEach(dept => {
+                const option = document.createElement('option');
+                option.value = dept;
+                option.textContent = dept;
+                if (dept === currentProviderDept) option.selected = true;
+                providerDeptSelect.appendChild(option);
+            });
+
+            // Receiver Line filter
+            const receiverLines = [...new Set(currentData.map(d => d['สายงานผู้รับบริการ']))].filter(Boolean);
+            const receiverLineSelect = document.getElementById('filterReceiverLine');
+            const currentReceiverLine = receiverLineSelect.value;
+            receiverLineSelect.innerHTML = '<option value="">ทั้งหมด</option>';
+            receiverLines.forEach(line => {
+                const option = document.createElement('option');
+                option.value = line;
+                option.textContent = line;
+                if (line === currentReceiverLine) option.selected = true;
+                receiverLineSelect.appendChild(option);
+            });
+
+            // Receiver Dept filter
+            const receiverDepts = [...new Set(currentData.map(d => d['ฝ่ายผู้รับบริการ']))].filter(Boolean);
+            const receiverDeptSelect = document.getElementById('filterReceiverDept');
+            const currentReceiverDept = receiverDeptSelect.value;
+            receiverDeptSelect.innerHTML = '<option value="">ทั้งหมด</option>';
+            receiverDepts.forEach(dept => {
+                const option = document.createElement('option');
+                option.value = dept;
+                option.textContent = dept;
+                if (dept === currentReceiverDept) option.selected = true;
+                receiverDeptSelect.appendChild(option);
+            });
+
+            // Service filter
+            const services = [...new Set(currentData.map(d => d['บริการ']))].filter(Boolean);
+            const serviceSelect = document.getElementById('filterService');
+            const currentService = serviceSelect.value;
+            serviceSelect.innerHTML = '<option value="">ทั้งหมด</option>';
+            services.forEach(service => {
+                const option = document.createElement('option');
+                option.value = service;
+                option.textContent = service;
+                if (service === currentService) option.selected = true;
+                serviceSelect.appendChild(option);
+            });
+        }
+
+        // Apply filters
+        function applyFilters() {
+            let filteredData = [...currentData];
+
+            const providerLine = document.getElementById('filterProviderLine').value;
+            const providerDept = document.getElementById('filterProviderDept').value;
+            const receiverLine = document.getElementById('filterReceiverLine').value;
+            const receiverDept = document.getElementById('filterReceiverDept').value;
+            const service = document.getElementById('filterService').value;
+            const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
+
+            if (providerLine) {
+                filteredData = filteredData.filter(d => d['สายงานผู้ให้บริการ'] === providerLine);
+            }
+            if (providerDept) {
+                filteredData = filteredData.filter(d => d['ฝ่ายผู้ให้บริการ'] === providerDept);
+            }
+            if (receiverLine) {
+                filteredData = filteredData.filter(d => d['สายงานผู้รับบริการ'] === receiverLine);
+            }
+            if (receiverDept) {
+                filteredData = filteredData.filter(d => d['ฝ่ายผู้รับบริการ'] === receiverDept);
+            }
+            if (service) {
+                filteredData = filteredData.filter(d => d['บริการ'] === service);
+            }
+            if (minAmount > 0) {
+                filteredData = filteredData.filter(d => parseThaiNumber(d['จำนวนเงิน (PxQ)']) >= minAmount);
+            }
+
+            return filteredData;
+        }
+
+        // Set dimension
+        // ⭐️ FIX 1: Accept 'event' as a parameter
+        function setDimension(dimension, event) {
+            currentDimension = dimension;
+            
+            // Update button states
+            document.querySelectorAll('.dimension-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            updateVisualization();
+        }
+
+        // Create Sankey data based on dimension
+        function createSankeyData(data, dimension) {
+            const nodes = [];
+            const links = [];
+            const nodeMap = new Map();
+
+            // Helper function to get or create node
+            function getNode(name, type) {
+                const key = `${type}:${name}`;
+                if (!nodeMap.has(key)) {
+                    const node = {
+                        name: name,
+                        type: type
+                    };
+                    nodes.push(node);
+                    nodeMap.set(key, node);
+                }
+                return nodeMap.get(key);
+            }
+
+            // Build different Sankey structures based on dimension
+            switch(dimension) {
+                case 'provider-service-receiver':
+                    // Three-level: Provider → Service → Receiver
+                    const providerServiceLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['ฝ่ายผู้ให้บริการ'],
+                        d => d['บริการ']
+                    );
+                    
+                    const serviceReceiverLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['บริการ'],
+                        d => d['ฝ่ายผู้รับบริการ']
+                    );
+
+                    providerServiceLinks.forEach((services, provider) => {
+                        const providerNode = getNode(provider, 'provider');
+                        services.forEach((value, service) => {
+                            const serviceNode = getNode(service, 'service');
+                            links.push({
+                                source: providerNode,
+                                target: serviceNode,
+                                value: value,
+                                type: 'provider-service'
+                            });
+                        });
+                    });
+
+                    serviceReceiverLinks.forEach((receivers, service) => {
+                        const serviceNode = getNode(service, 'service');
+                        receivers.forEach((value, receiver) => {
+                            const receiverNode = getNode(receiver, 'receiver');
+                            links.push({
+                                source: serviceNode,
+                                target: receiverNode,
+                                value: value,
+                                type: 'service-receiver'
+                            });
+                        });
+                    });
+                    break;
+
+                case 'provider-receiver':
+                    // Direct: Provider → Receiver
+                    const directLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['ฝ่ายผู้ให้บริการ'],
+                        d => d['ฝ่ายผู้รับบริการ']
+                    );
+
+                    directLinks.forEach((receivers, provider) => {
+                        const providerNode = getNode(provider, 'provider');
+                        receivers.forEach((value, receiver) => {
+                            const receiverNode = getNode(receiver, 'receiver');
+                            links.push({
+                                source: providerNode,
+                                target: receiverNode,
+                                value: value,
+                                type: 'direct'
+                            });
+                        });
+                    });
+                    break;
+
+                case 'service-provider-receiver':
+                    // Service → Provider → Receiver
+                    const serviceProviderLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['บริการ'],
+                        d => d['ฝ่ายผู้ให้บริการ']
+                    );
+                    
+                    const providerReceiverLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['ฝ่ายผู้ให้บริการ'],
+                        d => d['ฝ่ายผู้รับบริการ']
+                    );
+
+                    serviceProviderLinks.forEach((providers, service) => {
+                        const serviceNode = getNode(service, 'service');
+                        providers.forEach((value, provider) => {
+                            const providerNode = getNode(provider, 'provider');
+                            links.push({
+                                source: serviceNode,
+                                target: providerNode,
+                                value: value,
+                                type: 'service-provider'
+                            });
+                        });
+                    });
+
+                    providerReceiverLinks.forEach((receivers, provider) => {
+                        const providerNode = getNode(provider, 'provider');
+                        receivers.forEach((value, receiver) => {
+                            const receiverNode = getNode(receiver, 'receiver');
+                            links.push({
+                                source: providerNode,
+                                target: receiverNode,
+                                value: value,
+                                type: 'provider-receiver'
+                            });
+                        });
+                    });
+                    break;
+
+                case 'providerline-service-receiverline':
+                    // Provider Line → Service → Receiver Line
+                    const lineServiceLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['สายงานผู้ให้บริการ'],
+                        d => d['บริการ']
+                    );
+                    
+                    const serviceLineLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['บริการ'],
+                        d => d['สายงานผู้รับบริการ']
+                    );
+
+                    lineServiceLinks.forEach((services, line) => {
+                        const lineNode = getNode(line, 'provider-line');
+                        services.forEach((value, service) => {
+                            const serviceNode = getNode(service, 'service');
+                            links.push({
+                                source: lineNode,
+                                target: serviceNode,
+                                value: value,
+                                type: 'line-service'
+                            });
+                        });
+                    });
+
+                    serviceLineLinks.forEach((lines, service) => {
+                        const serviceNode = getNode(service, 'service');
+                        lines.forEach((value, line) => {
+                            const lineNode = getNode(line, 'receiver-line');
+                            links.push({
+                                source: serviceNode,
+                                target: lineNode,
+                                value: value,
+                                type: 'service-line'
+                            });
+                        });
+                    });
+                    break;
+
+                case 'service-flow':
+                    // Service flow to all departments
+                    data.forEach(row => {
+                        const service = row['บริการ'];
+                        const provider = row['ฝ่ายผู้ให้บริการ'];
+                        const receiver = row['ฝ่ายผู้รับบริการ'];
+                        const amount = parseThaiNumber(row['จำนวนเงิน (PxQ)']);
+
+                        const serviceNode = getNode(service, 'service');
+                        const providerNode = getNode(`Provider: ${provider}`, 'provider');
+                        const receiverNode = getNode(`Receiver: ${receiver}`, 'receiver');
+
+                        links.push({
+                            source: serviceNode,
+                            target: providerNode,
+                            value: amount / 2,
+                            type: 'service-provider'
+                        });
+
+                        links.push({
+                            source: serviceNode,
+                            target: receiverNode,
+                            value: amount / 2,
+                            type: 'service-receiver'
+                        });
+                    });
+                    break;
+
+                case 'hierarchical':
+                    // Line → Department → Service
+                    const lineDeptLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['สายงานผู้ให้บริการ'],
+                        d => d['ฝ่ายผู้ให้บริการ']
+                    );
+                    
+                    const deptServiceLinks = d3.rollup(
+                        data,
+                        v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                        d => d['ฝ่ายผู้ให้บริการ'],
+                        d => d['บริการ']
+                    );
+
+                    lineDeptLinks.forEach((depts, line) => {
+                        const lineNode = getNode(line, 'line');
+                        depts.forEach((value, dept) => {
+                            const deptNode = getNode(dept, 'department');
+                            links.push({
+                                source: lineNode,
+                                target: deptNode,
+                                value: value,
+                                type: 'line-dept'
+                            });
+                        });
+                    });
+
+                    deptServiceLinks.forEach((services, dept) => {
+                        const deptNode = getNode(dept, 'department');
+                        services.forEach((value, service) => {
+                            const serviceNode = getNode(service, 'service');
+                            links.push({
+                                source: deptNode,
+                                target: serviceNode,
+                                value: value,
+                                type: 'dept-service'
+                            });
+                        });
+                    });
+                    break;
+            }
+
+            return { nodes, links };
+        }
+
+        // Draw Sankey diagram
+        function drawSankey(data) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth - 60;
+            const height = 650;
+
+            const svg = container.append('svg')
+                .attr('width', width + 60)
+                .attr('height', height + 50);
+
+            // ✨ โค้ดใหม่: สร้างพื้นที่สำหรับนิยาม Gradient
+            const defs = svg.append('defs');
+
+            const g = svg.append('g')
+                .attr('transform', 'translate(30, 25)');
+
+            const sankey = d3.sankey()
+                .nodeWidth(20)
+                .nodePadding(15)
+                .extent([[0, 0], [width, height]]);
+
+            const graph = sankey(data);
+
+            const baseColors = {
+                provider: '#8b5cf6', // ม่วง
+                service: '#06b6d4',  // ฟ้า
+                receiver: '#16a34a', // เขียว
+                other: '#94a3b8'     // เทา (สำหรับประเภทอื่นๆ)
+            };
+            function getNodeColor(node) {
+                // กำหนดสีตาม "type" ที่เราตั้งไว้ใน createSankeyData
+                const type = node.type || '';
+                if (type.includes('provider')) return baseColors.provider;
+                if (type.includes('service')) return baseColors.service;
+                if (type.includes('receiver')) return baseColors.receiver;
+                return baseColors.other;
+            }
+
+            // ✨ โค้ดใหม่: สร้าง Gradient สำหรับแต่ละเส้นเชื่อม
+            const linkGradients = defs.selectAll('linearGradient')
+                .data(graph.links)
+                .enter().append('linearGradient')
+                .attr('id', d => `gradient-${d.source.index}-${d.target.index}`)
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', d => d.source.x1) // เริ่มจากขอบขวาของโหนดต้นทาง
+                .attr('x2', d => d.target.x0); // สิ้นสุดที่ขอบซ้ายของโหนดปลายทาง
+
+            // จุดเริ่มของ Gradient (สีของโหนดต้นทาง)
+            linkGradients.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', d => getNodeColor(d.source));
+
+            // จุดสิ้นสุดของ Gradient (สีของโหนดปลายทาง)
+            linkGradients.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', d => getNodeColor(d.target));
+
+            // Draw links
+            const link = g.append('g')
+                .selectAll('.sankey-link')
+                .data(graph.links)
+                .enter().append('path')
+                .attr('class', 'sankey-link')
+                .attr('d', d3.sankeyLinkHorizontal())
+                // ✨ โค้ดใหม่: ใช้ Gradient ที่สร้างไว้เป็นสีของเส้น
+                .attr('stroke', d => `url(#gradient-${d.source.index}-${d.target.index})`)
+                .attr('stroke-opacity', 0.6) // อาจจะต้องปรับค่าความโปร่งใสเพื่อให้สวยงาม
+                .attr('stroke-width', d => Math.max(1, d.width))
+                .on('mouseover', function(event, d) {
+                    d3.select(this).style('stroke-opacity', 0.9); // ทำให้เส้นเข้มขึ้นเมื่อเมาส์ชี้
+                    const totalFlow = d3.sum(graph.links, l => l.value);
+                    const percent = totalFlow > 0 ? ((d.value / totalFlow) * 100).toFixed(1) : 0;
+                    const content = `<strong>${d.source.name} → ${d.target.name}</strong><br/>
+                                     Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท<br/>
+                                     <span class="percent">${percent}% of total flow</span>`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', function() {
+                    d3.select(this).style('stroke-opacity', 0.6); // กลับเป็นค่าเดิม
+                    hideTooltip();
+                });
+
+            // ... ส่วนของ Node และ Text เหมือนเดิม ไม่ต้องแก้ไข ...
+            // Draw nodes
+            const node = g.append('g')
+                .selectAll('.sankey-node')
+                .data(graph.nodes)
+                .enter().append('g')
+                .attr('class', 'sankey-node');
+
+            node.append('rect')
+                .attr('x', d => d.x0)
+                .attr('y', d => d.y0)
+                .attr('height', d => d.y1 - d.y0)
+                .attr('width', d => d.x1 - d.x0)
+                .attr('fill', d => getNodeColor(d));
+                
+
+            // Add labels
+            node.append('text')
+                .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+                .attr('y', d => (d.y1 + d.y0) / 2)
+                .attr('dy', '0.35em')
+                .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+                .text(d => d.name.length > 30 ? d.name.substring(0, 28) + '...' : d.name)
+                .style('font-size', '11px');
+            
+            // เพิ่มโค้ดไฮไลท์ โดยใส่ event listener ที่ "node" ซึ่งเป็นกลุ่ม (g)
+            node.on('mouseover', function(event, d) {
+                    // 1. ทำให้ทุกเส้นและทุกโหนดจางลงก่อน
+                    link.style('stroke-opacity', 0.05);
+                    node.style('opacity', 0.2);
+
+                    // 2. ทำให้โหนดที่เลือก และเส้นทางที่เกี่ยวข้องกลับมาเด่นชัด
+                    d3.select(this).style('opacity', 1); // โหนดที่กำลังชี้
+                    
+                    const connectedLinks = d.sourceLinks.concat(d.targetLinks);
+                    connectedLinks.forEach(l => {
+                        // ทำให้เส้นที่เชื่อมต่อสว่างขึ้น
+                        link.filter(path_d => path_d === l).style('stroke-opacity', 0.7);
+                        
+                        // ทำให้โหนดต้นทางและปลายทางของเส้นนั้นสว่างขึ้น
+                        node.filter(node_d => node_d === l.source || node_d === l.target).style('opacity', 1);
+                    });
+
+                    // 3. แสดง Tooltip
+                    const totalIn = d3.sum(d.targetLinks, l => l.value);
+                    const totalOut = d3.sum(d.sourceLinks, l => l.value);
+                    const content = `<strong>${d.name}</strong><br/>
+                                    ${totalIn > 0 ? `Incoming: <span class="amount">${formatThaiNumber(totalIn)}</span><br/>` : ''}
+                                    ${totalOut > 0 ? `Outgoing: <span class="amount">${formatThaiNumber(totalOut)}</span><br/>` : ''}
+                                    Total Flow: <span class="amount">${formatThaiNumber(d.value || 0)}</span>`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', function() {
+                    // คืนค่าทุกอย่างกลับเป็นปกติเมื่อเอาเมาส์ออก
+                    link.style('stroke-opacity', 0.6); // ใช้ค่า opacity เดิมของ gradient
+                    node.style('opacity', 1);
+                    hideTooltip();
+                });
+
+            updateStats(graph);
+            updateLegend();
+        }
+
+        // Update statistics
+        function updateStats(graph) {
+            const data = applyFilters();
+            const totalRecords = data.length;
+            const totalAmount = d3.sum(data, d => parseThaiNumber(d['จำนวนเงิน (PxQ)']));
+            const totalNodes = graph ? graph.nodes.length : 0;
+            const totalLinks = graph ? graph.links.length : 0;
+            const avgTransaction = totalRecords > 0 ? totalAmount / totalRecords : 0;
+
+            document.getElementById('totalRecords').textContent = formatThaiNumber(totalRecords);
+            document.getElementById('totalAmount').textContent = formatThaiNumber(totalAmount) + ' ฿';
+            document.getElementById('totalNodes').textContent = totalNodes;
+            document.getElementById('totalLinks').textContent = totalLinks;
+            document.getElementById('avgTransaction').textContent = formatThaiNumber(avgTransaction) + ' ฿';
+        }
+
+        // Update legend
+        function updateLegend() {
+            const legendContainer = document.getElementById('legendContainer');
+            legendContainer.innerHTML = '<h4 style="width: 100%; color: #667eea; margin-bottom: 10px;">Color Legend:</h4>';
+
+            const legendItems = [
+                { color: '#8b5cf6', label: 'ผู้ให้บริการ (Provider)', type: 'provider' },
+                { color: '#06b6d4', label: 'บริการ (Service)', type: 'service' },
+                { color: '#f59e0b', label: 'ผู้รับบริการ (Receiver)', type: 'receiver' },
+                { color: '#94a3b8', label: 'อื่นๆ (Other)', type: 'other' }
+            ];
+
+            legendItems.forEach(item => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                legendItem.innerHTML = `
+                    <div class="legend-color" style="background: ${item.color};"></div>
+                    <span>${item.label}</span>
+                `;
+                legendContainer.appendChild(legendItem);
+            });
+        }
+
+        // Main update function
+        function updateVisualization() {
+            const filteredData = applyFilters();
+            
+            if (filteredData.length === 0) {
+                document.getElementById('vizContainer').innerHTML = '<div class="error">ไม่มีข้อมูลที่ตรงตามเงื่อนไขที่เลือก</div>';
+                updateStats(null);
+                return;
+            }
+
+            const sankeyData = createSankeyData(filteredData, currentDimension);
+            
+            if (sankeyData.nodes.length === 0 || sankeyData.links.length === 0) {
+                document.getElementById('vizContainer').innerHTML = '<div class="error">ไม่สามารถสร้าง Sankey diagram จากข้อมูลที่กรองได้</div>';
+                updateStats(null);
+                return;
+            }
+
+            drawSankey(sankeyData);
+        }
+    </script>
+</body>
+</html>

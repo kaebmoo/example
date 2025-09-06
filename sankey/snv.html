@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Network & Sankey Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <style>
+        /* CSS ทั้งหมดเหมือนเดิม (ไม่เปลี่ยนแปลง) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Sarabun', 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto 20px auto; background: rgba(255, 255, 255, 0.95); border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); padding: 30px; }
+        h1, h2 { text-align: center; color: #333; margin-bottom: 30px; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        h1 { font-size: 2.5rem; }
+        h2 { font-size: 2rem; margin-top: 40px; }
+        .controls { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; align-items: center; padding: 20px; background: #f8f9fa; border-radius: 10px; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 200px; }
+        label { font-weight: 600; color: #555; font-size: 0.9rem; }
+        select, input[type="file"] { padding: 8px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; background: white; }
+        .visualization { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-height: 600px; position: relative; }
+        svg { width: 100%; height: 600px; display: block; }
+        .loading, .initial-message { text-align: center; padding: 50px; color: #666; font-size: 1.2rem; }
+        .error { background: #fee; color: #c00; padding: 15px; border-radius: 8px; }
+        .viz-tooltip { position: fixed; text-align: left; padding: 12px; font-size: 13px; background: rgba(0,0,0,0.85); color: white; border-radius: 8px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10000; }
+        .viz-tooltip strong { color: #667eea; }
+        .viz-tooltip .amount { color: #ffd700; font-weight: bold; }
+        /* Sankey Specific Styles */
+        .sankey-node rect { fill-opacity: .9; shape-rendering: crispEdges; }
+        .sankey-link { fill: none; stroke-opacity: .4; }
+        .sankey-link:hover { stroke-opacity: .7; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>📊 Service Network Dashboard</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="fileInput">Upload CSV File (for all visualizations):</label>
+                <input type="file" id="fileInput" accept=".csv">
+            </div>
+             <div class="control-group">
+                <label for="sankeyDimension">Sankey Diagram Dimension:</label>
+                <select id="sankeyDimension" onchange="updateSankeyVisualization()">
+                    <option value="สายงานผู้ให้บริการ,บริการ,สายงานผู้รับบริการ">Provider (Division) → Service → Receiver (Division)</option>
+                    <option value="ฝ่ายผู้ให้บริการ,บริการ,ฝ่ายผู้รับบริการ" selected>Provider (Dept) → Service → Receiver (Dept)</option>
+                    <option value="ฝ่ายผู้ให้บริการ,ฝ่ายผู้รับบริการ">Provider (Dept) → Receiver (Dept)</option>
+                    <option value="บริการ,ฝ่ายผู้รับบริการ">Service → Receiver (Dept)</option>
+                    <option value="ฝ่ายผู้ให้บริการ,บริการ">Provider (Dept) → Service</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="visualization" id="sankeyContainer">
+             <div class="initial-message">กรุณาอัปโหลดไฟล์ CSV เพื่อเริ่มสร้าง Sankey Diagram</div>
+        </div>
+    </div>
+    
+    <script>
+        // --- Global Variables & Setup ---
+        let tooltip = d3.select('body').append('div').attr('class', 'viz-tooltip');
+        let currentData = []; // เริ่มต้นด้วยข้อมูลว่าง
+
+        // --- Event Listener for File Input ---
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    parseCSV(event.target.result);
+                };
+                reader.readAsText(file, 'TIS-620'); // ใช้ TIS-620 หรือ UTF-8 ตามไฟล์ของคุณ
+            }
+        });
+
+        // --- Data Parsing ---
+        function parseCSV(csvText) {
+            // ใช้ d3.csvParse เพื่อความแม่นยำในการจัดการกับ comma และ quote
+            // Clean up headers: remove byte order mark (BOM) and trim spaces
+            const cleanCsvText = csvText.trim().replace(/^\uFEFF/, '');
+            const parsedData = d3.csvParse(cleanCsvText, (d) => {
+                 // Trim whitespace from all values
+                for (let key in d) {
+                    if (typeof d[key] === 'string') {
+                        d[key] = d[key].trim();
+                    }
+                }
+                return d;
+            });
+            
+            currentData = parsedData;
+            
+            // เมื่อ parse ข้อมูลเสร็จ, อัปเดตกราฟทั้งหมด
+            updateAllVisualizations();
+        }
+
+        function updateAllVisualizations() {
+            // ที่นี่คุณสามารถเรียกฟังก์ชัน update ของกราฟอื่นๆ ได้ด้วย
+            // updateNetworkVisualization(); 
+            updateSankeyVisualization();
+        }
+
+        // --- Helper Functions ---
+        function parseThaiNumber(str) {
+            if (!str) return 0;
+            return parseFloat(str.toString().replace(/,/g, '')) || 0;
+        }
+
+        function formatThaiNumber(num) {
+            return num.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        
+        function showTooltip(content, event) {
+            tooltip.transition().duration(200).style('opacity', .95);
+            tooltip.html(content)
+                .style('left', (event.clientX + 15) + 'px')
+                .style('top', (event.clientY - 15) + 'px');
+        }
+
+        function hideTooltip() {
+            tooltip.transition().duration(500).style('opacity', 0);
+        }
+        
+        // --- Sankey Functions ---
+        function prepareSankeyData(data, dimensions) {
+            const links = new Map();
+            const nodes = new Set();
+            
+            data.forEach(row => {
+                const amount = parseThaiNumber(row['จำนวนเงิน (PxQ)']);
+                if (amount <= 0) return;
+
+                for (let i = 0; i < dimensions.length - 1; i++) {
+                    const sourceName = row[dimensions[i]];
+                    const targetName = row[dimensions[i+1]];
+                    
+                    if (!sourceName || !targetName || sourceName === targetName) continue;
+                    
+                    const uniqueSourceName = `${sourceName} | dim_${i}`;
+                    const uniqueTargetName = `${targetName} | dim_${i+1}`;
+                    
+                    nodes.add(uniqueSourceName);
+                    nodes.add(uniqueTargetName);
+
+                    const key = `${uniqueSourceName} -> ${uniqueTargetName}`;
+                    const existingLink = links.get(key) || { source: uniqueSourceName, target: uniqueTargetName, value: 0 };
+                    
+                    existingLink.value += amount;
+                    links.set(key, existingLink);
+                }
+            });
+
+            const nodeList = Array.from(nodes).map(name => ({ name }));
+            const linkList = Array.from(links.values());
+
+            // --- ส่วนที่เพิ่มเข้ามาเพื่อแก้ไข Error ---
+            // 1. สร้าง Map เพื่อเก็บ index ของแต่ละ node
+            const nodeMap = new Map(nodeList.map((node, i) => [node.name, i]));
+
+            // 2. แปลงชื่อ source/target ใน linkList ให้เป็น index ที่ถูกต้อง
+            const indexedLinks = linkList.map(link => ({
+                source: nodeMap.get(link.source),
+                target: nodeMap.get(link.target),
+                value: link.value
+            }));
+            // -----------------------------------------
+
+            // คืนค่า nodeList เดิม แต่ใช้ indexedLinks ที่แปลงแล้ว
+            return { nodes: nodeList, links: indexedLinks };
+        }
+        
+        function createSankey(data) {
+            const container = d3.select('#sankeyContainer');
+            container.selectAll('*').remove();
+            
+            if (data.links.length === 0) {
+                 container.html('<div class="error">ไม่มีข้อมูลให้แสดงผลสำหรับมิติที่เลือก หรือข้อมูลในไฟล์ไม่ถูกต้อง</div>');
+                 return;
+            }
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            const sankey = d3.sankey()
+                .nodeWidth(25)
+                .nodePadding(12)
+                .extent([[1, 5], [width - 1, height - 5]]);
+            
+            const graph = sankey({
+                nodes: data.nodes.map(d => Object.assign({}, d)),
+                links: data.links.map(d => Object.assign({}, d))
+            });
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+            
+            // Draw Links
+            const link = svg.append('g')
+                .attr('class', 'sankey-links')
+                .attr('fill', 'none')
+                .attr('stroke-opacity', 0.5)
+                .selectAll('g')
+                .data(graph.links)
+                .join('g')
+                .style('mix-blend-mode', 'multiply');
+            
+            const gradient = link.append('linearGradient')
+                .attr('id', (d, i) => `gradient-${i}`)
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', d => d.source.x1)
+                .attr('x2', d => d.target.x0);
+
+            gradient.append('stop').attr('offset', '0%').attr('stop-color', d => color(d.source.name));
+            gradient.append('stop').attr('offset', '100%').attr('stop-color', d => color(d.target.name));
+
+            link.append('path')
+                .attr('class', 'sankey-link')
+                .attr('d', d3.sankeyLinkHorizontal())
+                .attr('stroke', (d, i) => `url(#gradient-${i})`)
+                .attr('stroke-width', d => Math.max(1, d.width))
+                .on('mouseover', (event, d) => {
+                    const content = `<strong>Flow</strong><br>${d.source.name} → ${d.target.name}<br>
+                                   Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            // Draw Nodes
+            const node = svg.append('g')
+                .attr('class', 'sankey-nodes')
+                .selectAll('g')
+                .data(graph.nodes)
+                .join('g');
+            
+            node.append('rect')
+                .attr('class', 'sankey-node')
+                .attr('x', d => d.x0)
+                .attr('y', d => d.y0)
+                .attr('height', d => d.y1 - d.y0)
+                .attr('width', d => d.x1 - d.x0)
+                .attr('fill', d => color(d.name))
+                .on('mouseover', (event, d) => {
+                    const content = `<strong>${d.name}</strong><br>
+                                   Total Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            node.append('text')
+                .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+                .attr('y', d => (d.y1 + d.y0) / 2)
+                .attr('dy', '0.35em')
+                .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+                .text(d => d.name.split(' | dim_')[0]) 
+                .style('font-size', '12px')
+                .style('fill', '#333');
+        }
+
+        function updateSankeyVisualization() {
+            if (currentData.length === 0) {
+                d3.select('#sankeyContainer').html('<div class="initial-message">กรุณาอัปโหลดไฟล์ CSV เพื่อเริ่มสร้าง Sankey Diagram</div>');
+                return;
+            }
+            
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            const sankeyData = prepareSankeyData(currentData, dimensions);
+            createSankey(sankeyData);
+        }
+    </script>
+</body>
+</html>

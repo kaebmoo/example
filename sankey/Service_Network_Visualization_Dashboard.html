@@ -402,8 +402,8 @@
                 .style('opacity', .95);
             
             tooltip.html(content)
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY - 28) + 'px');
+                .style('left', (event.clientX + 10) + 'px') // <--- แก้เป็น clientX
+                .style('top', (event.clientY - 28) + 'px'); // <--- แก้เป็น clientY
         }
 
         function hideTooltip() {
