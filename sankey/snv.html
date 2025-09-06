@@ -9,44 +9,206 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Sarabun', 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 1400px; margin: 0 auto 20px auto; background: rgba(255, 255, 255, 0.95); border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); padding: 30px; }
-        h1, h2 { text-align: center; color: #333; margin-bottom: 30px; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        h1 { font-size: 2.5rem; }
-        h2 { font-size: 2rem; margin-top: 40px; }
-        .controls { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; align-items: center; padding: 20px; background: #f8f9fa; border-radius: 10px; }
-        .control-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 200px; }
-        label { font-weight: 600; color: #555; font-size: 0.9rem; }
-        select, input[type="file"] { padding: 8px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; background: white; }
-        .visualization { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-height: 600px; position: relative; }
-        svg { width: 100%; height: 600px; display: block; }
+        .container { max-width: 1600px; margin: 0 auto 20px auto; background: rgba(255, 255, 255, 0.95); border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); padding: 30px; }
+        h1 { text-align: center; color: #333; margin-bottom: 30px; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.5rem; }
+        
+        .controls { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px; 
+            padding: 20px; 
+            background: #f8f9fa; 
+            border-radius: 10px; 
+        }
+        
+        .control-group { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 5px; 
+        }
+        
+        label { 
+            font-weight: 600; 
+            color: #555; 
+            font-size: 0.9rem; 
+        }
+        
+        select, input[type="file"], input[type="number"] { 
+            padding: 8px 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            font-size: 14px; 
+            background: white;
+            transition: all 0.3s ease;
+        }
+        
+        select:hover, input:hover {
+            border-color: #667eea;
+        }
+        
+        .filter-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+        
+        .filter-title {
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-1px);
+        }
+        
+        .reset-btn {
+            background: #dc3545;
+        }
+        
+        .reset-btn:hover {
+            background: #c82333;
+        }
+        
+        .visualization { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 20px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            min-height: 700px; 
+            position: relative; 
+        }
+        
+        svg { width: 100%; height: 700px; display: block; }
+        
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f0f4ff;
+            border-radius: 10px;
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
         .loading, .initial-message { text-align: center; padding: 50px; color: #666; font-size: 1.2rem; }
         .error { background: #fee; color: #c00; padding: 15px; border-radius: 8px; }
-        .viz-tooltip { position: fixed; text-align: left; padding: 12px; font-size: 13px; background: rgba(0,0,0,0.85); color: white; border-radius: 8px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10000; }
-        .viz-tooltip strong { color: #667eea; }
-        .viz-tooltip .amount { color: #ffd700; font-weight: bold; }
-        .sankey-node rect { fill-opacity: .9; shape-rendering: crispEdges; }
-        .sankey-link { fill: none; stroke-opacity: .4; }
+        .viz-tooltip { 
+            position: fixed; 
+            text-align: left; 
+            padding: 12px; 
+            font-size: 13px; 
+            background: rgba(0,0,0,0.9); 
+            color: white; 
+            border-radius: 8px; 
+            pointer-events: none; 
+            opacity: 0; 
+            transition: opacity 0.2s; 
+            z-index: 10000;
+            max-width: 300px;
+        }
+        .viz-tooltip strong { color: #fbbf24; }
+        .viz-tooltip .amount { color: #86efac; font-weight: bold; }
+        .viz-tooltip .percent { color: #94a3b8; font-size: 11px; }
+        .sankey-node rect { fill-opacity: .9; shape-rendering: crispEdges; cursor: pointer; }
+        .sankey-link { fill: none; stroke-opacity: .3; transition: stroke-opacity 0.3s; }
         .sankey-link:hover { stroke-opacity: .7; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 Service Network Dashboard</h1>
+        <h1>Transfer Price Dashboard</h1>
         
         <div class="controls">
             <div class="control-group">
-                <label for="fileInput">Upload CSV File:</label>
+                <label for="fileInput">📁 Upload CSV File:</label>
                 <input type="file" id="fileInput" accept=".csv">
             </div>
+            
             <div class="control-group">
-                <label for="sankeyDimension">Sankey Diagram Dimension:</label>
-                <select id="sankeyDimension" onchange="updateSankeyVisualization()">
-                    <option value="สายงานผู้ให้บริการ,บริการ,สายงานผู้รับบริการ">Provider (Division) → Service → Receiver (Division)</option>
-                    <option value="ฝ่ายผู้ให้บริการ,บริการ,ฝ่ายผู้รับบริการ" selected>Provider (Dept) → Service → Receiver (Dept)</option>
-                    <option value="ฝ่ายผู้ให้บริการ,ฝ่ายผู้รับบริการ">Provider (Dept) → Receiver (Dept)</option>
-                    <option value="บริการ,ฝ่ายผู้รับบริการ">Service → Receiver (Dept)</option>
-                    <option value="ฝ่ายผู้ให้บริการ,บริการ">Provider (Dept) → Service</option>
+                <label for="sankeyDimension">🔀 Sankey Dimension:</label>
+                <select id="sankeyDimension" onchange="updateFilters(); updateSankeyVisualization();">
+                    <option value="สายงานผู้ให้บริการ,บริการ,สายงานผู้รับบริการ">สายงาน → บริการ → สายงาน</option>
+                    <option value="ฝ่ายผู้ให้บริการ,บริการ,ฝ่ายผู้รับบริการ" selected>ฝ่าย → บริการ → ฝ่าย</option>
+                    <option value="ฝ่ายผู้ให้บริการ,ฝ่ายผู้รับบริการ">ฝ่าย → ฝ่าย (Direct)</option>
+                    <option value="บริการ,ฝ่ายผู้รับบริการ">บริการ → ฝ่ายผู้รับ</option>
+                    <option value="ฝ่ายผู้ให้บริการ,บริการ">ฝ่ายผู้ให้ → บริการ</option>
+                    <option value="สายงานผู้ให้บริการ,ฝ่ายผู้ให้บริการ,บริการ">สายงาน → ฝ่าย → บริการ</option>
                 </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="minAmount">💰 จำนวนเงินขั้นต่ำ:</label>
+                <input type="number" id="minAmount" placeholder="0" value="0" onchange="updateSankeyVisualization()">
+            </div>
+            
+            <div class="control-group">
+                <label for="maxAmount">💰 จำนวนเงินสูงสุด:</label>
+                <input type="number" id="maxAmount" placeholder="ไม่จำกัด" onchange="updateSankeyVisualization()">
+            </div>
+            
+            <div class="control-group filter-section" style="grid-column: 1 / -1;">
+                <div class="filter-title">🔍 ตัวกรองตามมิติที่เลือก</div>
+                <div id="dynamicFilters" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                    <!-- Dynamic filters will be inserted here -->
+                </div>
+            </div>
+            
+            <div class="control-group" style="grid-column: 1 / -1; display: flex; flex-direction: row; gap: 10px; justify-content: center;">
+                <button onclick="updateSankeyVisualization()">🔄 อัพเดทกราฟ</button>
+                <button class="reset-btn" onclick="resetFilters()">🗑️ ล้างตัวกรอง</button>
+            </div>
+        </div>
+        
+        <div class="stats-panel" id="statsPanel" style="display: none;">
+            <div class="stat-card">
+                <div class="stat-value" id="totalRecords">0</div>
+                <div class="stat-label">จำนวนรายการ</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalAmount">0</div>
+                <div class="stat-label">ยอดรวม (ล้านบาท)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uniqueNodes">0</div>
+                <div class="stat-label">จำนวน Nodes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uniqueLinks">0</div>
+                <div class="stat-label">จำนวน Links</div>
             </div>
         </div>
         
@@ -58,6 +220,7 @@
     <script>
         let tooltip = d3.select('body').append('div').attr('class', 'viz-tooltip');
         let currentData = [];
+        let filteredData = [];
 
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -82,23 +245,93 @@
             });
             
             currentData = parsedData;
-            console.log("Parsed data sample:", currentData[0]); // Debug
-            console.log("Available columns:", Object.keys(currentData[0])); // Debug
-            updateAllVisualizations();
+            filteredData = [...currentData];
+            
+            // Show stats panel
+            document.getElementById('statsPanel').style.display = 'grid';
+            
+            updateFilters();
+            updateSankeyVisualization();
         }
 
-        function updateAllVisualizations() {
+        function updateFilters() {
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            const filtersContainer = document.getElementById('dynamicFilters');
+            filtersContainer.innerHTML = '';
+            
+            dimensions.forEach((dim, index) => {
+                // Get unique values for this dimension
+                const uniqueValues = [...new Set(currentData.map(d => d[dim]))].filter(v => v).sort();
+                
+                const filterGroup = document.createElement('div');
+                filterGroup.className = 'control-group';
+                filterGroup.innerHTML = `
+                    <label for="filter_${index}">${dim}:</label>
+                    <select id="filter_${index}" onchange="updateSankeyVisualization()" multiple style="height: 100px;">
+                        <option value="">-- ทั้งหมด --</option>
+                        ${uniqueValues.map(v => `<option value="${v}">${v}</option>`).join('')}
+                    </select>
+                `;
+                filtersContainer.appendChild(filterGroup);
+            });
+        }
+
+        function resetFilters() {
+            // Reset amount filters
+            document.getElementById('minAmount').value = 0;
+            document.getElementById('maxAmount').value = '';
+            
+            // Reset dimension filters
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            dimensions.forEach((_, index) => {
+                const filter = document.getElementById(`filter_${index}`);
+                if (filter) {
+                    filter.selectedIndex = 0;
+                }
+            });
+            
             updateSankeyVisualization();
+        }
+
+        function applyFilters() {
+            filteredData = [...currentData];
+            
+            // Apply amount filters
+            const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
+            const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
+            
+            filteredData = filteredData.filter(d => {
+                const amount = parseThaiNumber(d['จำนวนเงิน (PxQ)']);
+                return amount >= minAmount && amount <= maxAmount;
+            });
+            
+            // Apply dimension filters
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            dimensions.forEach((dim, index) => {
+                const filter = document.getElementById(`filter_${index}`);
+                if (filter && filter.value && filter.value !== '') {
+                    const selectedValues = Array.from(filter.selectedOptions).map(o => o.value).filter(v => v);
+                    if (selectedValues.length > 0) {
+                        filteredData = filteredData.filter(d => selectedValues.includes(d[dim]));
+                    }
+                }
+            });
+            
+            return filteredData;
         }
 
         function parseThaiNumber(str) {
             if (!str) return 0;
-            // Handle both formats: with comma and without comma
             return parseFloat(str.toString().replace(/,/g, '')) || 0;
         }
 
         function formatThaiNumber(num) {
-            return num.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(2) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toLocaleString('th-TH', { maximumFractionDigits: 0 });
         }
         
         function showTooltip(content, event) {
@@ -115,10 +348,13 @@
         function prepareSankeyData(data, dimensions) {
             const links = new Map();
             const nodes = new Set();
+            let totalAmount = 0;
             
             data.forEach(row => {
                 const amount = parseThaiNumber(row['จำนวนเงิน (PxQ)']);
                 if (amount <= 0) return;
+                
+                totalAmount += amount;
 
                 for (let i = 0; i < dimensions.length - 1; i++) {
                     const sourceName = row[dimensions[i]];
@@ -150,7 +386,11 @@
                 value: link.value
             }));
 
-            return { nodes: nodeList, links: indexedLinks };
+            return { 
+                nodes: nodeList, 
+                links: indexedLinks,
+                totalAmount: totalAmount
+            };
         }
         
         function createSankey(data) {
@@ -158,59 +398,80 @@
             container.selectAll('*').remove();
             
             if (data.links.length === 0) {
-                container.html('<div class="error">ไม่มีข้อมูลให้แสดงผลสำหรับมิติที่เลือก หรือข้อมูลในไฟล์ไม่ถูกต้อง</div>');
+                container.html('<div class="error">ไม่มีข้อมูลให้แสดงผล กรุณาปรับตัวกรอง</div>');
                 return;
             }
 
-            const width = container.node().offsetWidth;
-            const height = 600;
+            const width = container.node().offsetWidth - 40;
+            const height = 700;
 
             const svg = container.append('svg')
-                .attr('width', width)
+                .attr('width', width + 40)
                 .attr('height', height);
 
             const sankey = d3.sankey()
-                .nodeWidth(25)
-                .nodePadding(12)
-                .extent([[1, 5], [width - 1, height - 5]]);
+                .nodeWidth(20)
+                .nodePadding(10)
+                .extent([[20, 10], [width, height - 10]]);
             
             const graph = sankey({
                 nodes: data.nodes.map(d => Object.assign({}, d)),
                 links: data.links.map(d => Object.assign({}, d))
             });
 
-            const color = d3.scaleOrdinal(d3.schemeCategory10);
+            // Color scale
+            const color = d3.scaleOrdinal()
+                .domain(data.nodes.map(d => d.name))
+                .range(d3.schemeTableau10);
             
+            // Create gradients for links
+            const defs = svg.append('defs');
+            
+            // Draw links with proper stroke width based on value
             const link = svg.append('g')
                 .attr('class', 'sankey-links')
-                .attr('fill', 'none')
-                .attr('stroke-opacity', 0.5)
                 .selectAll('g')
                 .data(graph.links)
-                .join('g')
-                .style('mix-blend-mode', 'multiply');
+                .join('g');
             
-            const gradient = link.append('linearGradient')
-                .attr('id', (d, i) => `gradient-${i}`)
-                .attr('gradientUnits', 'userSpaceOnUse')
-                .attr('x1', d => d.source.x1)
-                .attr('x2', d => d.target.x0);
-
-            gradient.append('stop').attr('offset', '0%').attr('stop-color', d => color(d.source.name));
-            gradient.append('stop').attr('offset', '100%').attr('stop-color', d => color(d.target.name));
-
+            // Create gradient for each link
+            link.each(function(d, i) {
+                const gradient = defs.append('linearGradient')
+                    .attr('id', `gradient-${i}`)
+                    .attr('gradientUnits', 'userSpaceOnUse')
+                    .attr('x1', d.source.x1)
+                    .attr('x2', d.target.x0);
+                
+                gradient.append('stop')
+                    .attr('offset', '0%')
+                    .attr('stop-color', color(d.source.name));
+                
+                gradient.append('stop')
+                    .attr('offset', '100%')
+                    .attr('stop-color', color(d.target.name));
+            });
+            
+            // Draw link paths
             link.append('path')
                 .attr('class', 'sankey-link')
                 .attr('d', d3.sankeyLinkHorizontal())
                 .attr('stroke', (d, i) => `url(#gradient-${i})`)
                 .attr('stroke-width', d => Math.max(1, d.width))
-                .on('mouseover', (event, d) => {
-                    const content = `<strong>Flow</strong><br>${d.source.name.split(' | dim_')[0]} → ${d.target.name.split(' | dim_')[0]}<br>
-                                   Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                .attr('fill', 'none')
+                .on('mouseover', function(event, d) {
+                    d3.select(this).style('stroke-opacity', 0.7);
+                    const percent = (d.value / data.totalAmount * 100).toFixed(1);
+                    const content = `<strong>${d.source.name.split(' | dim_')[0]} → ${d.target.name.split(' | dim_')[0]}</strong><br>
+                                   <span class="amount">${formatThaiNumber(d.value)} บาท</span><br>
+                                   <span class="percent">${percent}% ของยอดรวม</span>`;
                     showTooltip(content, event);
                 })
-                .on('mouseout', hideTooltip);
+                .on('mouseout', function() {
+                    d3.select(this).style('stroke-opacity', 0.3);
+                    hideTooltip();
+                });
 
+            // Draw nodes
             const node = svg.append('g')
                 .attr('class', 'sankey-nodes')
                 .selectAll('g')
@@ -224,21 +485,46 @@
                 .attr('height', d => d.y1 - d.y0)
                 .attr('width', d => d.x1 - d.x0)
                 .attr('fill', d => color(d.name))
-                .on('mouseover', (event, d) => {
+                .on('mouseover', function(event, d) {
+                    // Highlight connected links
+                    link.style('stroke-opacity', l => 
+                        l.source === d || l.target === d ? 0.7 : 0.1
+                    );
+                    
                     const content = `<strong>${d.name.split(' | dim_')[0]}</strong><br>
-                                   Total Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                                   <span class="amount">${formatThaiNumber(d.value)} บาท</span>`;
                     showTooltip(content, event);
                 })
-                .on('mouseout', hideTooltip);
+                .on('mouseout', function() {
+                    link.style('stroke-opacity', 0.3);
+                    hideTooltip();
+                });
 
+            // Add labels
             node.append('text')
                 .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
                 .attr('y', d => (d.y1 + d.y0) / 2)
                 .attr('dy', '0.35em')
                 .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-                .text(d => d.name.split(' | dim_')[0]) 
-                .style('font-size', '12px')
+                .text(d => {
+                    const name = d.name.split(' | dim_')[0];
+                    return name.length > 30 ? name.substring(0, 28) + '...' : name;
+                })
+                .style('font-size', '11px')
                 .style('fill', '#333');
+        }
+
+        function updateStats(data) {
+            const filtered = applyFilters();
+            
+            document.getElementById('totalRecords').textContent = filtered.length;
+            document.getElementById('totalAmount').textContent = 
+                formatThaiNumber(d3.sum(filtered, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])));
+            
+            if (data) {
+                document.getElementById('uniqueNodes').textContent = data.nodes.length;
+                document.getElementById('uniqueLinks').textContent = data.links.length;
+            }
         }
 
         function updateSankeyVisualization() {
@@ -247,8 +533,11 @@
                 return;
             }
             
+            const filtered = applyFilters();
             const dimensions = document.getElementById('sankeyDimension').value.split(',');
-            const sankeyData = prepareSankeyData(currentData, dimensions);
+            const sankeyData = prepareSankeyData(filtered, dimensions);
+            
+            updateStats(sankeyData);
             createSankey(sankeyData);
         }
     </script>

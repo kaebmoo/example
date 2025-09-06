@@ -179,3 +179,4 @@ virus_total_scan.py
 /time_attendant
 /results
 email/config.json
+/sankey/data
