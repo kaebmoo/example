@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Network Visualization Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Sarabun', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        select, input[type="file"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        select:hover, input[type="file"]:hover {
+            border-color: #667eea;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            align-self: flex-end;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .visualization {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            min-height: 600px;
+            position: relative;
+        }
+
+        .visualization h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+
+        svg {
+            width: 100%;
+            height: 600px;
+            display: block;
+        }
+
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            fill: #667eea;
+            stroke: #fff;
+            stroke-width: 2px;
+            transition: all 0.3s ease;
+        }
+
+        .node:hover circle {
+            fill: #764ba2;
+        }
+
+        .node text {
+            font-size: 12px;
+            pointer-events: none;
+            fill: #333;
+        }
+
+        .link {
+            fill: none;
+            stroke: #999;
+            stroke-opacity: 0.6;
+            stroke-width: 1.5px;
+        }
+
+        .link:hover {
+            stroke-opacity: 1;
+            stroke-width: 3px;
+        }
+
+        .chord path {
+            fill-opacity: 0.6;
+            stroke: #000;
+            stroke-width: 0.5px;
+            transition: all 0.3s ease;
+        }
+
+        .chord path:hover {
+            fill-opacity: 0.8;
+        }
+
+        /* Fixed Tooltip Style */
+        .viz-tooltip {
+            position: fixed;
+            text-align: left;
+            padding: 12px;
+            font-size: 13px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10000;
+            max-width: 300px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .viz-tooltip strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .viz-tooltip .amount {
+            color: #ffd700;
+            font-weight: bold;
+        }
+
+        .info-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .info-panel h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-card h4 {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #333;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .auto-update-indicator {
+            display: inline-block;
+            margin-left: 10px;
+            padding: 4px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .visualization {
+            animation: fadeIn 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Service Network Visualization Dashboard</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="fileInput">Upload CSV File:</label>
+                <input type="file" id="fileInput" accept=".csv">
+            </div>
+            
+            <div class="control-group">
+                <label for="vizType">
+                    Visualization Type:
+                    <span class="auto-update-indicator">Auto Update</span>
+                </label>
+                <select id="vizType" onchange="updateVisualization()">
+                    <option value="tidyTree">Tidy Tree</option>
+                    <option value="radialTidyTree">Radial Tidy Tree</option>
+                    <option value="dendrogram">Dendrogram</option>
+                    <option value="radialDendrogram">Radial Dendrogram</option>
+                    <option value="forceDirected">Force-Directed Graph</option>
+                    <option value="hierarchicalEdge">Hierarchical Edge Bundling</option>
+                    <option value="chord">Chord Diagram</option>
+                    <option value="directedChord">Directed Chord Diagram</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterDivision">Filter by Division:</label>
+                <select id="filterDivision" onchange="updateVisualization()">
+                    <option value="">All Divisions</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterDepartment">Filter by Department:</label>
+                <select id="filterDepartment" onchange="updateVisualization()">
+                    <option value="">All Departments</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="filterService">Filter by Service:</label>
+                <select id="filterService" onchange="updateVisualization()">
+                    <option value="">All Services</option>
+                </select>
+            </div>
+            
+            <button onclick="updateVisualization()">🔄 Refresh</button>
+        </div>
+        
+        <div class="info-panel">
+            <h3>Data Summary</h3>
+            <div class="stats">
+                <div class="stat-card">
+                    <h4>Total Records</h4>
+                    <p id="totalRecords">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Amount</h4>
+                    <p id="totalAmount">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Unique Divisions</h4>
+                    <p id="uniqueDivisions">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Unique Services</h4>
+                    <p id="uniqueServices">0</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="visualization" id="vizContainer">
+            <div class="loading">Please upload a CSV file to begin visualization</div>
+        </div>
+    </div>
+
+    <script>
+        // Global tooltip element - สร้างครั้งเดียวเมื่อโหลดหน้า
+        let tooltip = null;
+        
+        // Initialize tooltip when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            tooltip = d3.select('body')
+                .append('div')
+                .attr('class', 'viz-tooltip')
+                .style('opacity', 0);
+        });
+
+        // Sample data for demonstration
+        let rawData = [
+            {
+                "สายงานผู้ให้บริการ": "กรรมการผู้จัดการใหญ่",
+                "Cost Center ผู้ให้บริการ": "1D10200",
+                "ฝ่ายผู้ให้บริการ": "ฝ่ายสื่อสัญญาณพื้นที่ 1",
+                "Cost Center ผู้ใช้บริการ": "1D10600",
+                "สายงานผู้รับบริการ": "สายงานดิจิทัลและโซลูชั่น",
+                "ฝ่ายผู้รับบริการ": "ฝ่ายผลิตภัณฑ์คลาวด์และบิ๊กดาต้า",
+                "บริการ": "DWDM (สื่อสัญญาณ)",
+                "บริการย่อย": "Protection - 10G - Size M",
+                "ราคาต่อหน่วย (P)": "23,845.00",
+                "หน่วยนับ": "จำนวนวงจร",
+                "ปริมาณการใช้ (Q)": "4",
+                "จำนวนเงิน (PxQ)": "95,380.00"
+            }
+        ];
+
+        let currentData = [];
+        let filteredData = [];
+
+        // Helper functions
+        function parseThaiNumber(str) {
+            if (!str) return 0;
+            return parseFloat(str.toString().replace(/,/g, '')) || 0;
+        }
+
+        function formatThaiNumber(num) {
+            return num.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Tooltip helper functions
+        function showTooltip(content, event) {
+            if (!tooltip) return;
+            
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', .95);
+            
+            tooltip.html(content)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 28) + 'px');
+        }
+
+        function hideTooltip() {
+            if (!tooltip) return;
+            
+            tooltip.transition()
+                .duration(500)
+                .style('opacity', 0);
+        }
+
+        // Color scales
+        const colorScale = d3.scaleOrdinal(d3.schemeSet3);
+        const divisionColors = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // File reader
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    parseCSV(event.target.result);
+                };
+                reader.readAsText(file, 'UTF-8');
+            }
+        });
+
+        // Parse CSV
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n').filter(line => line.trim());
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            rawData = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                const obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = values[index] || '';
+                });
+                rawData.push(obj);
+            }
+            
+            currentData = [...rawData];
+            updateFilters();
+            updateStats();
+            updateVisualization();
+        }
+
+        // Update filters
+        function updateFilters() {
+            const divisions = [...new Set(currentData.map(d => d['สายงานผู้ให้บริการ']))];
+            const divisionSelect = document.getElementById('filterDivision');
+            const currentDivision = divisionSelect.value;
+            divisionSelect.innerHTML = '<option value="">All Divisions</option>';
+            divisions.forEach(div => {
+                if (div) {
+                    const option = document.createElement('option');
+                    option.value = div;
+                    option.textContent = div;
+                    if (div === currentDivision) option.selected = true;
+                    divisionSelect.appendChild(option);
+                }
+            });
+
+            const departments = [...new Set(currentData.map(d => d['ฝ่ายผู้ให้บริการ']))];
+            const deptSelect = document.getElementById('filterDepartment');
+            const currentDept = deptSelect.value;
+            deptSelect.innerHTML = '<option value="">All Departments</option>';
+            departments.forEach(dept => {
+                if (dept) {
+                    const option = document.createElement('option');
+                    option.value = dept;
+                    option.textContent = dept;
+                    if (dept === currentDept) option.selected = true;
+                    deptSelect.appendChild(option);
+                }
+            });
+
+            const services = [...new Set(currentData.map(d => d['บริการ']))];
+            const serviceSelect = document.getElementById('filterService');
+            const currentService = serviceSelect.value;
+            serviceSelect.innerHTML = '<option value="">All Services</option>';
+            services.forEach(service => {
+                if (service) {
+                    const option = document.createElement('option');
+                    option.value = service;
+                    option.textContent = service;
+                    if (service === currentService) option.selected = true;
+                    serviceSelect.appendChild(option);
+                }
+            });
+        }
+
+        // Update statistics
+        function updateStats() {
+            const data = applyFilters();
+            const totalRecords = data.length;
+            const totalAmount = data.reduce((sum, d) => sum + parseThaiNumber(d['จำนวนเงิน (PxQ)']), 0);
+            const uniqueDivisions = new Set(data.map(d => d['สายงานผู้ให้บริการ'])).size;
+            const uniqueServices = new Set(data.map(d => d['บริการ'])).size;
+
+            document.getElementById('totalRecords').textContent = totalRecords.toLocaleString('th-TH');
+            document.getElementById('totalAmount').textContent = formatThaiNumber(totalAmount);
+            document.getElementById('uniqueDivisions').textContent = uniqueDivisions;
+            document.getElementById('uniqueServices').textContent = uniqueServices;
+        }
+
+        // Apply filters
+        function applyFilters() {
+            filteredData = [...currentData];
+
+            const divisionFilter = document.getElementById('filterDivision').value;
+            const deptFilter = document.getElementById('filterDepartment').value;
+            const serviceFilter = document.getElementById('filterService').value;
+
+            if (divisionFilter) {
+                filteredData = filteredData.filter(d => d['สายงานผู้ให้บริการ'] === divisionFilter);
+            }
+            if (deptFilter) {
+                filteredData = filteredData.filter(d => d['ฝ่ายผู้ให้บริการ'] === deptFilter);
+            }
+            if (serviceFilter) {
+                filteredData = filteredData.filter(d => d['บริการ'] === serviceFilter);
+            }
+
+            return filteredData;
+        }
+
+        // Create hierarchical data
+        function createHierarchicalData(data) {
+            const groupedData = d3.group(data, 
+                d => d['สายงานผู้ให้บริการ'] || 'Unknown', 
+                d => d['ฝ่ายผู้ให้บริการ'] || 'Unknown',
+                d => d['บริการ'] || 'Unknown',
+                d => d['บริการย่อย'] || 'Unknown'
+            );
+
+            const root = { name: "Organization", children: [] };
+            
+            groupedData.forEach((deptMap, divisionName) => {
+                const divisionNode = { 
+                    name: divisionName, 
+                    children: [],
+                    value: 0
+                };
+                
+                deptMap.forEach((serviceMap, deptName) => {
+                    const deptNode = { 
+                        name: deptName, 
+                        children: [],
+                        value: 0
+                    };
+                    
+                    serviceMap.forEach((subServiceMap, serviceName) => {
+                        const serviceNode = { 
+                            name: serviceName, 
+                            children: [],
+                            value: 0
+                        };
+                        
+                        subServiceMap.forEach((rows, subServiceName) => {
+                            const totalAmount = d3.sum(rows, d => parseThaiNumber(d['จำนวนเงิน (PxQ)']));
+                            serviceNode.children.push({ 
+                                name: subServiceName, 
+                                value: totalAmount 
+                            });
+                            serviceNode.value += totalAmount;
+                        });
+                        
+                        if (serviceNode.children.length > 0) {
+                            deptNode.children.push(serviceNode);
+                            deptNode.value += serviceNode.value;
+                        }
+                    });
+                    
+                    if (deptNode.children.length > 0) {
+                        divisionNode.children.push(deptNode);
+                        divisionNode.value += deptNode.value;
+                    }
+                });
+                
+                if (divisionNode.children.length > 0) {
+                    root.children.push(divisionNode);
+                }
+            });
+            
+            sortHierarchy(root);
+            return root;
+        }
+
+        function sortHierarchy(node) {
+            if (node.children && node.children.length > 0) {
+                node.children.sort((a, b) => (b.value || 0) - (a.value || 0));
+                node.children.forEach(child => sortHierarchy(child));
+            }
+        }
+
+        // Visualization functions
+        function createTidyTree(data, radial = false) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+            const margin = {top: 40, right: 120, bottom: 40, left: 120};
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            const g = svg.append('g');
+
+            if (radial) {
+                g.attr('transform', `translate(${width/2},${height/2})`);
+            } else {
+                g.attr('transform', `translate(${margin.left},${margin.top})`);
+            }
+
+            const hierarchyData = createHierarchicalData(data);
+            const root = d3.hierarchy(hierarchyData)
+                .sum(d => d.value || 0);
+
+            const treeLayout = radial 
+                ? d3.tree().size([2 * Math.PI, Math.min(width, height) / 2 - 100])
+                : d3.tree().size([height - margin.top - margin.bottom, width - margin.left - margin.right]);
+
+            treeLayout(root);
+
+            // Links
+            const link = g.selectAll('.link')
+                .data(root.links())
+                .enter().append('path')
+                .attr('class', 'link')
+                .attr('d', radial ? 
+                    d3.linkRadial()
+                        .angle(d => d.x)
+                        .radius(d => d.y) :
+                    d3.linkHorizontal()
+                        .x(d => d.y)
+                        .y(d => d.x));
+
+            // Nodes with tooltips
+            const node = g.selectAll('.node')
+                .data(root.descendants())
+                .enter().append('g')
+                .attr('class', 'node')
+                .attr('transform', d => {
+                    if (radial) {
+                        return `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`;
+                    } else {
+                        return `translate(${d.y},${d.x})`;
+                    }
+                })
+                .on('mouseover', function(event, d) {
+                    const content = `<strong>${d.data.name}</strong><br/>
+                                   Value: <span class="amount">${d.value ? formatThaiNumber(d.value) : 'N/A'}</span> บาท<br/>
+                                   Level: ${d.depth}`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            node.append('circle')
+                .attr('r', d => d.children ? 5 : 3)
+                .style('fill', d => d.children ? colorScale(d.depth) : '#999');
+
+            node.append('text')
+                .attr('dy', '0.31em')
+                .attr('x', d => d.children ? -6 : 6)
+                .style('text-anchor', d => d.children ? 'end' : 'start')
+                .text(d => d.data.name)
+                .style('font-size', '10px');
+
+            if (radial) {
+                node.selectAll('text')
+                    .attr('transform', d => `rotate(${d.x >= Math.PI ? 180 : 0})`);
+            }
+
+            // Add zoom
+            const zoom = d3.zoom()
+                .scaleExtent([0.5, 5])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+        }
+
+        function createDendrogram(data, radial = false) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+            const margin = {top: 40, right: 120, bottom: 40, left: 120};
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            const g = svg.append('g');
+
+            if (radial) {
+                g.attr('transform', `translate(${width/2},${height/2})`);
+            } else {
+                g.attr('transform', `translate(${margin.left},${margin.top})`);
+            }
+
+            const hierarchyData = createHierarchicalData(data);
+            const root = d3.hierarchy(hierarchyData)
+                .sum(d => d.value || 0);
+
+            const clusterLayout = radial 
+                ? d3.cluster().size([2 * Math.PI, Math.min(width, height) / 2 - 100])
+                : d3.cluster().size([height - margin.top - margin.bottom, width - margin.left - margin.right]);
+
+            clusterLayout(root);
+
+            // Links
+            const link = g.selectAll('.link')
+                .data(root.links())
+                .enter().append('path')
+                .attr('class', 'link')
+                .attr('d', radial ? 
+                    d3.linkRadial()
+                        .angle(d => d.x)
+                        .radius(d => d.y) :
+                    d3.linkHorizontal()
+                        .x(d => d.y)
+                        .y(d => d.x));
+
+            // Nodes with tooltips
+            const node = g.selectAll('.node')
+                .data(root.descendants())
+                .enter().append('g')
+                .attr('class', 'node')
+                .attr('transform', d => {
+                    if (radial) {
+                        return `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`;
+                    } else {
+                        return `translate(${d.y},${d.x})`;
+                    }
+                })
+                .on('mouseover', function(event, d) {
+                    const content = `<strong>${d.data.name}</strong><br/>
+                                   Value: <span class="amount">${d.value ? formatThaiNumber(d.value) : 'N/A'}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            node.append('circle')
+                .attr('r', 4)
+                .style('fill', d => d.children ? colorScale(d.depth) : '#999');
+
+            node.append('text')
+                .attr('dy', '0.31em')
+                .attr('x', d => d.children ? -6 : 6)
+                .style('text-anchor', d => d.children ? 'end' : 'start')
+                .text(d => d.data.name)
+                .style('font-size', '10px');
+
+            if (radial) {
+                node.selectAll('text')
+                    .attr('transform', d => `rotate(${d.x >= Math.PI ? 180 : 0})`);
+            }
+
+            // Add zoom
+            const zoom = d3.zoom()
+                .scaleExtent([0.5, 5])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+        }
+
+        function createForceDirectedGraph(data) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            // Aggregate data by department
+            const linkMap = d3.rollup(
+                data,
+                v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                d => d['ฝ่ายผู้ให้บริการ'],
+                d => d['ฝ่ายผู้รับบริการ']
+            );
+
+            const nodes = [];
+            const nodeMap = new Map();
+            const links = [];
+
+            // Create nodes
+            const allDepts = new Set([
+                ...data.map(d => d['ฝ่ายผู้ให้บริการ']),
+                ...data.map(d => d['ฝ่ายผู้รับบริการ'])
+            ]);
+
+            allDepts.forEach(dept => {
+                if (dept) {
+                    const node = {id: dept, group: 'dept'};
+                    nodes.push(node);
+                    nodeMap.set(dept, node);
+                }
+            });
+
+            // Create links
+            linkMap.forEach((targets, source) => {
+                targets.forEach((value, target) => {
+                    links.push({
+                        source: source,
+                        target: target,
+                        value: value
+                    });
+                });
+            });
+
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(20));
+
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', 'link')
+                .style('stroke-width', d => Math.sqrt(d.value / 10000))
+                .on('mouseover', function(event, d) {
+                    const content = `<strong>${d.source.id} → ${d.target.id}</strong><br/>
+                                   Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            const node = svg.append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('r', 10)
+                .style('fill', (d, i) => divisionColors(i))
+                .on('mouseover', function(event, d) {
+                    const content = `<strong>${d.id}</strong>`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip)
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+
+            const text = svg.append('g')
+                .selectAll('text')
+                .data(nodes)
+                .enter().append('text')
+                .text(d => d.id.length > 20 ? d.id.substring(0, 18) + '...' : d.id)
+                .style('font-size', '10px')
+                .attr('dx', 12)
+                .attr('dy', 4);
+
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+
+                text
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
+            }
+
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
+            }
+
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                event.subject.fx = null;
+                event.subject.fy = null;
+            }
+        }
+
+        function createHierarchicalEdgeBundling(data) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+            const radius = Math.min(width, height) / 2 - 120;
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            const g = svg.append('g')
+                .attr('transform', `translate(${width/2},${height/2})`);
+
+            const hierarchyData = createHierarchicalData(data);
+            const root = d3.hierarchy(hierarchyData)
+                .sum(d => d.value || 0)
+                .sort((a, b) => b.value - a.value);
+            
+            const cluster = d3.cluster()
+                .size([2 * Math.PI, radius]);
+
+            cluster(root);
+
+            const leaves = root.leaves();
+
+            // Create links from actual data
+            const linkMap = d3.rollup(
+                data,
+                v => d3.sum(v, d => parseThaiNumber(d['จำนวนเงิน (PxQ)'])),
+                d => d['ฝ่ายผู้ให้บริการ'],
+                d => d['ฝ่ายผู้รับบริการ']
+            );
+
+            const links = [];
+            linkMap.forEach((targets, source) => {
+                targets.forEach((amount, target) => {
+                    const sourceNodes = leaves.filter(d => {
+                        let parent = d.parent;
+                        while (parent) {
+                            if (parent.data.name === source) return true;
+                            parent = parent.parent;
+                        }
+                        return false;
+                    });
+                    
+                    const targetNodes = leaves.filter(d => {
+                        let parent = d.parent;
+                        while (parent) {
+                            if (parent.data.name === target) return true;
+                            parent = parent.parent;
+                        }
+                        return false;
+                    });
+                    
+                    if (sourceNodes.length > 0 && targetNodes.length > 0) {
+                        links.push({
+                            source: sourceNodes[0],
+                            target: targetNodes[0],
+                            value: amount
+                        });
+                    }
+                });
+            });
+
+            const line = d3.lineRadial()
+                .curve(d3.curveBundle.beta(0.85))
+                .radius(d => d.y)
+                .angle(d => d.x);
+
+            // Draw links with tooltips
+            const link = g.append('g')
+                .selectAll('path')
+                .data(links)
+                .enter().append('path')
+                .attr('class', 'link')
+                .attr('d', d => line(d.source.path(d.target)))
+                .style('stroke', '#999')
+                .style('fill', 'none')
+                .style('stroke-opacity', d => Math.min(0.8, d.value / 1000000))
+                .style('stroke-width', d => Math.max(0.5, Math.sqrt(d.value / 100000)))
+                .on('mouseover', function(event, d) {
+                    d3.select(this).style('stroke', '#667eea').style('stroke-opacity', 1);
+                    const content = `<strong>${d.source.data.name} → ${d.target.data.name}</strong><br/>
+                                   Amount: <span class="amount">${formatThaiNumber(d.value)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', function(event, d) {
+                    d3.select(this).style('stroke', '#999').style('stroke-opacity', Math.min(0.8, d.value / 1000000));
+                    hideTooltip();
+                });
+
+            // Draw nodes
+            const node = g.append('g')
+                .selectAll('g')
+                .data(root.descendants())
+                .enter().append('g')
+                .attr('transform', d => {
+                    if (d.x && d.y) {
+                        return `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`;
+                    }
+                    return '';
+                });
+
+            // Add circles for leaf nodes with tooltips
+            node.filter(d => !d.children)
+                .append('circle')
+                .attr('r', 3)
+                .style('fill', '#667eea')
+                .on('mouseover', function(event, d) {
+                    const content = `<strong>${d.data.name}</strong><br/>
+                                   Value: <span class="amount">${d.value ? formatThaiNumber(d.value) : 'N/A'}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            // Add text labels
+            node.filter(d => !d.children)
+                .append('text')
+                .attr('dy', '0.31em')
+                .attr('x', d => d.x < Math.PI ? 6 : -6)
+                .style('text-anchor', d => d.x < Math.PI ? 'start' : 'end')
+                .attr('transform', d => d.x >= Math.PI ? 'rotate(180)' : null)
+                .text(d => d.data.name)
+                .style('font-size', '8px');
+        }
+
+        function createChordDiagram(data, directed = false) {
+            const container = d3.select('#vizContainer');
+            container.selectAll('*').remove();
+
+            const width = container.node().offsetWidth;
+            const height = 600;
+            const outerRadius = Math.min(width, height) * 0.5 - 80;
+            const innerRadius = outerRadius - 30;
+
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            const g = svg.append('g')
+                .attr('transform', `translate(${width/2},${height/2})`);
+
+            // Create matrix
+            const departments = [...new Set([
+                ...data.map(d => d['ฝ่ายผู้ให้บริการ']),
+                ...data.map(d => d['ฝ่ายผู้รับบริการ'])
+            ])].filter(d => d);
+
+            const matrix = Array(departments.length).fill(null)
+                .map(() => Array(departments.length).fill(0));
+
+            data.forEach(row => {
+                const sourceIdx = departments.indexOf(row['ฝ่ายผู้ให้บริการ']);
+                const targetIdx = departments.indexOf(row['ฝ่ายผู้รับบริการ']);
+                const amount = parseThaiNumber(row['จำนวนเงิน (PxQ)']);
+
+                if (sourceIdx !== -1 && targetIdx !== -1) {
+                    matrix[sourceIdx][targetIdx] += amount;
+                    if (!directed) {
+                        matrix[targetIdx][sourceIdx] += amount;
+                    }
+                }
+            });
+
+            const chord = directed ? d3.chordDirected() : d3.chord();
+            chord.padAngle(0.05).sortSubgroups(d3.descending);
+
+            const chords = chord(matrix);
+
+            const arc = d3.arc()
+                .innerRadius(innerRadius)
+                .outerRadius(outerRadius);
+
+            const ribbon = d3.ribbon()
+                .radius(innerRadius);
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            // Groups with tooltips
+            const group = g.append('g')
+                .selectAll('g')
+                .data(chords.groups)
+                .enter().append('g');
+
+            group.append('path')
+                .style('fill', d => color(d.index))
+                .style('stroke', d => d3.rgb(color(d.index)).darker())
+                .attr('d', arc)
+                .on('mouseover', function(event, d) {
+                    const outgoing = d3.sum(matrix[d.index]);
+                    const incoming = d3.sum(matrix.map(row => row[d.index]));
+                    const content = `<strong>${departments[d.index]}</strong><br/>
+                                   Outgoing: <span class="amount">${formatThaiNumber(outgoing)}</span> บาท<br/>
+                                   Incoming: <span class="amount">${formatThaiNumber(incoming)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', hideTooltip);
+
+            group.append('text')
+                .each(d => { d.angle = (d.startAngle + d.endAngle) / 2; })
+                .attr('dy', '0.35em')
+                .attr('transform', d => `
+                    rotate(${(d.angle * 180 / Math.PI - 90)})
+                    translate(${outerRadius + 10})
+                    ${d.angle > Math.PI ? 'rotate(180)' : ''}
+                `)
+                .style('text-anchor', d => d.angle > Math.PI ? 'end' : null)
+                .text(d => departments[d.index].length > 25 ? 
+                      departments[d.index].substring(0, 23) + '...' : 
+                      departments[d.index])
+                .style('font-size', '10px');
+
+            // Ribbons with tooltips
+            g.append('g')
+                .attr('fill-opacity', 0.67)
+                .selectAll('path')
+                .data(chords)
+                .enter().append('path')
+                .attr('d', ribbon)
+                .style('fill', d => color(d.target.index))
+                .style('stroke', d => d3.rgb(color(d.target.index)).darker())
+                .on('mouseover', function(event, d) {
+                    d3.select(this).style('fill-opacity', 0.9);
+                    const content = `<strong>${departments[d.source.index]} → ${departments[d.target.index]}</strong><br/>
+                                   Amount: <span class="amount">${formatThaiNumber(d.source.value)}</span> บาท`;
+                    showTooltip(content, event);
+                })
+                .on('mouseout', function() {
+                    d3.select(this).style('fill-opacity', 0.67);
+                    hideTooltip();
+                });
+        }
+
+        // Update visualization
+        function updateVisualization() {
+            const vizType = document.getElementById('vizType').value;
+            const data = applyFilters();
+
+            // Update statistics
+            updateStats();
+
+            if (data.length === 0) {
+                document.getElementById('vizContainer').innerHTML = '<div class="error">No data to display after filtering</div>';
+                return;
+            }
+
+            switch(vizType) {
+                case 'tidyTree':
+                    createTidyTree(data, false);
+                    break;
+                case 'radialTidyTree':
+                    createTidyTree(data, true);
+                    break;
+                case 'dendrogram':
+                    createDendrogram(data, false);
+                    break;
+                case 'radialDendrogram':
+                    createDendrogram(data, true);
+                    break;
+                case 'forceDirected':
+                    createForceDirectedGraph(data);
+                    break;
+                case 'hierarchicalEdge':
+                    createHierarchicalEdgeBundling(data);
+                    break;
+                case 'chord':
+                    createChordDiagram(data, false);
+                    break;
+                case 'directedChord':
+                    createChordDiagram(data, true);
+                    break;
+            }
+        }
+
+        // Initialize with sample visualization when page loads
+        window.addEventListener('load', function() {
+            updateVisualization();
+        });
+    </script>
+</body>
+</html>
