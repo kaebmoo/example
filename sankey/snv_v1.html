@@ -557,6 +557,45 @@
         .security-note strong {
             color: #664d03;
         }
+        .status-message.fade-out {
+            animation: fadeOut 0.5s ease forwards;
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; display: none; }
+        }
+
+        .data-source-selector.collapsed {
+            padding: 10px 15px;
+        }
+
+        .data-source-selector.collapsed .source-content {
+            display: none;
+        }
+
+        .collapse-btn {
+            float: right;
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            padding: 2px 8px;
+            font-size: 0.9rem;
+            transition: transform 0.3s ease;
+        }
+
+        .collapse-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .collapse-btn.collapsed {
+            transform: rotate(180deg);
+        }
+
+        .source-content {
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -595,38 +634,41 @@
             </div>
             
             <!-- Data Source Selector -->
-            <div class="data-source-selector">
+            <div class="data-source-selector" id="dataSourceSection">
                 <div class="security-note">
-                    🔒 <strong>ความปลอดภัยของข้อมูล:</strong> ข้อมูลทั้งหมดจะถูกประมวลผลในเบราว์เซอร์ของคุณเท่านั้น
+                    🔒 <strong>Load data file:</strong> ข้อมูลทั้งหมดจะถูกประมวลผลในเบราว์เซอร์ของคุณเท่านั้น
+                    <button class="collapse-btn" onclick="toggleDataSource()" title="ย่อ/ขยาย">▼</button>
                 </div>
                 
-                <div class="source-tabs">
-                    <button class="tab-btn active" onclick="switchTab('upload')">📤 Upload File</button>
-                    <button class="tab-btn" onclick="switchTab('server')">📁 Server Files</button>
-                </div>
-                
-                <div id="uploadTab" class="tab-content active">
-                    <div class="file-input-wrapper">
-                        <input type="file" id="fileInput" accept=".csv">
-                        <label for="fileInput" class="file-input-label" id="fileInputLabel">
-                            <span>📎 คลิกเพื่อเลือกไฟล์ CSV หรือลากไฟล์มาวางที่นี่</span>
-                        </label>
+                <div class="source-content">
+                    <div class="source-tabs">
+                        <button class="tab-btn active" onclick="switchTab('upload')">📤 Upload File</button>
+                        <button class="tab-btn" onclick="switchTab('server')">📁 Server Files</button>
                     </div>
-                </div>
-                
-                <div id="serverTab" class="tab-content">
-                    <div style="margin-bottom: 10px; color: #666;">
-                        📂 เลือกไฟล์จากรายการที่อนุญาต:
+                    
+                    <div id="uploadTab" class="tab-content active">
+                        <div class="file-input-wrapper">
+                            <input type="file" id="fileInput" accept=".csv">
+                            <label for="fileInput" class="file-input-label" id="fileInputLabel">
+                                <span>📎 คลิกเพื่อเลือกไฟล์ CSV หรือลากไฟล์มาวางที่นี่</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="server-files-grid" id="serverFilesList">
-                        <!-- Server files will be loaded here -->
+                    
+                    <div id="serverTab" class="tab-content">
+                        <div style="margin-bottom: 10px; color: #666;">
+                            📂 เลือกไฟล์จากรายการที่อนุญาต:
+                        </div>
+                        <div class="server-files-grid" id="serverFilesList">
+                            <!-- Server files will be loaded here -->
+                        </div>
+                        <button class="load-btn" onclick="loadSelectedServerFile()" id="loadServerBtn" disabled>
+                            โหลดไฟล์ที่เลือก
+                        </button>
                     </div>
-                    <button class="load-btn" onclick="loadSelectedServerFile()" id="loadServerBtn" disabled>
-                        โหลดไฟล์ที่เลือก
-                    </button>
+                    
+                    <div id="statusMessage" class="status-message"></div>
                 </div>
-                
-                <div id="statusMessage" class="status-message"></div>
             </div>
             
             <div class="controls">
@@ -866,15 +908,53 @@
         }
 
         // Status message functions
+        // Status message functions with auto-hide
         function showStatus(message, type) {
             const statusEl = document.getElementById('statusMessage');
             statusEl.className = 'status-message ' + type;
             statusEl.textContent = message;
+            
+            // Auto-hide after delay
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.classList.add('fade-out');
+                    setTimeout(() => {
+                        hideStatus();
+                        // Auto-collapse data source section after successful load
+                        const dataSection = document.getElementById('dataSourceSection');
+                        dataSection.classList.add('collapsed');
+                        const collapseBtn = document.querySelector('.collapse-btn');
+                        if (collapseBtn) {
+                            collapseBtn.classList.add('collapsed');
+                        }
+                    }, 500);
+                }, 3000); // Show success for 3 seconds
+            } else if (type === 'error') {
+                setTimeout(() => {
+                    statusEl.classList.add('fade-out');
+                    setTimeout(() => hideStatus(), 500);
+                }, 5000); // Show error for 5 seconds
+            }
         }
 
         function hideStatus() {
             const statusEl = document.getElementById('statusMessage');
             statusEl.className = 'status-message';
+            statusEl.textContent = '';
+        }
+
+        // Toggle data source section
+        function toggleDataSource() {
+            const dataSection = document.getElementById('dataSourceSection');
+            const collapseBtn = document.querySelector('.collapse-btn');
+            
+            if (dataSection.classList.contains('collapsed')) {
+                dataSection.classList.remove('collapsed');
+                collapseBtn.classList.remove('collapsed');
+            } else {
+                dataSection.classList.add('collapsed');
+                collapseBtn.classList.add('collapsed');
+            }
         }
 
         // File upload handling with drag and drop
