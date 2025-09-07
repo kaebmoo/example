@@ -521,26 +521,23 @@
 
         // Parse CSV
         function parseCSV(csvText) {
-            const lines = csvText.split('\n').filter(line => line.trim());
-            const headers = lines[0].split(',').map(h => h.trim());
+            // ลบ BOM (Byte Order Mark) ที่อาจติดมากับไฟล์ UTF-8
+            const cleanCsvText = csvText.trim().replace(/^\uFEFF/, '');
             
-            rawData = [];
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim());
-                const obj = {};
-                headers.forEach((header, index) => {
-                    obj[header] = values[index] || '';
-                });
-                rawData.push(obj);
-                // ================== ✨ CODE DEBUG START ✨ ==================
-                if (rawData.length > 0) {
-                    console.log("Headers ที่โปรแกรมอ่านได้:", Object.keys(rawData[0]));
-                    console.log("ข้อมูล 2 แถวแรกที่อ่านได้:", rawData.slice(0, 2));
+            // ใช้ d3.csvParse ที่สามารถจัดการ comma และ quote ได้อย่างถูกต้อง
+            const parsedData = d3.csvParse(cleanCsvText, (d) => {
+                // Trim whitespace จากข้อมูลทุกช่องเพื่อให้ข้อมูลสะอาด
+                for (let key in d) {
+                    if (typeof d[key] === 'string') {
+                        d[key] = d[key].trim();
+                    }
                 }
-                // =================== ✨ CODE DEBUG END ✨ ===================
-            }
+                return d;
+            });
             
+            rawData = parsedData;
             currentData = [...rawData];
+            
             updateFilters();
             updateVisualization();
         }
