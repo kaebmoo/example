@@ -676,6 +676,7 @@
                     <label for="sankeyDimension">🔀 Sankey Dimension:</label>
                     <select id="sankeyDimension" onchange="updateFilters(); updateSankeyVisualization();">
                         <option value="สายงานผู้ให้บริการ,บริการ,สายงานผู้รับบริการ">สายงาน → บริการ → สายงาน</option>
+                        <option value="สายงานผู้ให้บริการ,ฝ่ายผู้ให้บริการ,บริการ,ฝ่ายผู้รับบริการ,สายงานผู้รับบริการ">สายงาน → ฝ่าย (ให้) → บริการ → ฝ่าย (รับ) → สายงาน</option>
                         <option value="ฝ่ายผู้ให้บริการ,บริการ,ฝ่ายผู้รับบริการ" selected>ฝ่าย → บริการ → ฝ่าย</option>
                         <option value="ฝ่ายผู้ให้บริการ,ฝ่ายผู้รับบริการ">ฝ่าย → ฝ่าย (Direct)</option>
                         <option value="บริการ,ฝ่ายผู้รับบริการ">บริการ → ฝ่ายผู้รับ</option>
@@ -1049,24 +1050,248 @@
         }
 
         
-        // แทนที่ function updateFilters() เดิมด้วยโค้ดนี้
         function updateFilters() {
             const dimensions = document.getElementById('sankeyDimension').value.split(',');
             const filtersContainer = document.getElementById('dynamicFilters');
             filtersContainer.innerHTML = '';
             
-            // Check if we have hierarchical dimensions (สายงาน -> ฝ่าย)
-            const hasHierarchy = dimensions.some(d => d.includes('สายงาน')) && 
-                                dimensions.some(d => d.includes('ฝ่าย'));
-            
-            if (hasHierarchy) {
-                // Use smart cascading filters
+            // Check for 5-level hierarchy
+            if (dimensions.length === 5 && 
+                dimensions[0].includes('สายงาน') && 
+                dimensions[1].includes('ฝ่าย') &&
+                dimensions[3].includes('ฝ่าย') &&
+                dimensions[4].includes('สายงาน')) {
+                createAdvancedCascadingFilters(dimensions, filtersContainer);
+            } else if (dimensions.some(d => d.includes('สายงาน')) && 
+                    dimensions.some(d => d.includes('ฝ่าย'))) {
                 createCascadingFilters(dimensions, filtersContainer);
             } else {
-                // Use simple filters
                 createSimpleFilters(dimensions, filtersContainer);
             }
         }
+
+        // Advanced cascading filters for 5-level hierarchy
+        function createAdvancedCascadingFilters(dimensions, container) {
+            // Instruction
+            const instruction = document.createElement('div');
+            instruction.style.cssText = 'color: #666; font-size: 0.85rem; margin-bottom: 15px; padding: 10px; background: linear-gradient(135deg, #f0f4ff, #fff); border-radius: 8px; border-left: 3px solid #667eea;';
+            instruction.innerHTML = '💡 <strong>คำแนะนำ:</strong> เลือกสายงานเพื่อกรองฝ่าย → เลือกฝ่ายเพื่อกรองบริการที่เกี่ยวข้อง';
+            container.appendChild(instruction);
+            
+            // Create filter groups
+            const groups = [
+                { title: '🏢 ผู้ให้บริการ', indices: [0, 1] },
+                { title: '📦 บริการ', indices: [2] },
+                { title: '🏛️ ผู้รับบริการ', indices: [3, 4] }
+            ];
+            
+            groups.forEach(group => {
+                const section = document.createElement('div');
+                section.style.cssText = 'background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;';
+                
+                const sectionTitle = document.createElement('div');
+                sectionTitle.style.cssText = 'font-weight: bold; color: #667eea; margin-bottom: 10px; font-size: 0.95rem;';
+                sectionTitle.textContent = group.title;
+                section.appendChild(sectionTitle);
+                
+                const filtersGrid = document.createElement('div');
+                filtersGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;';
+                
+                group.indices.forEach(index => {
+                    const dim = dimensions[index];
+                    const filterDiv = document.createElement('div');
+                    filterDiv.className = 'control-group';
+                    
+                    if (dim.includes('สายงาน')) {
+                        // Division filter
+                        const uniqueValues = [...new Set(currentData.map(d => d[dim]))].filter(v => v).sort();
+                        const isProvider = dim.includes('ผู้ให้');
+                        
+                        filterDiv.innerHTML = `
+                            <label for="filter_${index}" style="font-size: 0.85rem; color: #555;">
+                                ${dim}:
+                            </label>
+                            <select id="filter_${index}" 
+                                    onchange="updateAdvancedDependentFilters(${index}, '${dim}'); updateSankeyVisualization();" 
+                                    multiple style="height: 100px; width: 100%; font-size: 0.85rem;">
+                                <option value="">-- ทั้งหมด --</option>
+                                ${uniqueValues.map(v => `<option value="${v}">${v}</option>`).join('')}
+                            </select>
+                        `;
+                    } else if (dim.includes('ฝ่าย')) {
+                        // Department filter (will be updated by division)
+                        filterDiv.innerHTML = `
+                            <label for="filter_${index}" style="font-size: 0.85rem; color: #555;">
+                                ${dim}:
+                            </label>
+                            <select id="filter_${index}" 
+                                    onchange="updateServiceFromDepartment(${index}, '${dim}'); updateSankeyVisualization();" 
+                                    multiple style="height: 100px; width: 100%; font-size: 0.85rem;">
+                                <option value="">-- เลือกสายงานก่อน --</option>
+                            </select>
+                        `;
+                    } else if (dim.includes('บริการ')) {
+                        // Service filter
+                        const uniqueValues = [...new Set(currentData.map(d => d[dim]))].filter(v => v).sort();
+                        
+                        filterDiv.innerHTML = `
+                            <label for="filter_${index}" style="font-size: 0.85rem; color: #555;">
+                                ${dim}:
+                            </label>
+                            <select id="filter_${index}" 
+                                    onchange="updateSankeyVisualization();" 
+                                    multiple style="height: 100px; width: 100%; font-size: 0.85rem;">
+                                <option value="">-- ทั้งหมด --</option>
+                                ${uniqueValues.map(v => `<option value="${v}">${v}</option>`).join('')}
+                            </select>
+                        `;
+                    }
+                    
+                    filtersGrid.appendChild(filterDiv);
+                });
+                
+                section.appendChild(filtersGrid);
+                container.appendChild(section);
+            });
+            
+            // Initialize all department filters
+            setTimeout(() => {
+                [1, 3].forEach(index => {
+                    updateDepartmentByDivision(index);
+                });
+            }, 100);
+        }
+
+        // Update service based on selected departments
+        function updateServiceFromDepartment(departmentIndex, departmentDim) {
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            const serviceIndex = 2; // Service is always at index 2
+            const serviceSelect = document.getElementById(`filter_${serviceIndex}`);
+            
+            if (!serviceSelect) return;
+            
+            // Get selected departments (both provider and receiver)
+            const providerDeptSelect = document.getElementById('filter_1');
+            const receiverDeptSelect = document.getElementById('filter_3');
+            
+            let selectedDepartments = [];
+            if (providerDeptSelect) {
+                selectedDepartments = selectedDepartments.concat(
+                    Array.from(providerDeptSelect.selectedOptions)
+                        .map(o => o.value)
+                        .filter(v => v)
+                );
+            }
+            
+            // Build available services
+            let availableServices = new Set();
+            
+            if (selectedDepartments.length > 0) {
+                currentData.forEach(row => {
+                    if (selectedDepartments.includes(row['ฝ่ายผู้ให้บริการ']) && row['บริการ']) {
+                        availableServices.add(row['บริการ']);
+                    }
+                });
+            } else {
+                currentData.forEach(row => {
+                    if (row['บริการ']) {
+                        availableServices.add(row['บริการ']);
+                    }
+                });
+            }
+            
+            // Update service options
+            const sortedServices = Array.from(availableServices).sort();
+            const currentSelection = Array.from(serviceSelect.selectedOptions)
+                .map(o => o.value)
+                .filter(v => v);
+            
+            serviceSelect.innerHTML = `
+                <option value="">-- ทั้งหมด --</option>
+                ${sortedServices.map(v => {
+                    const selected = currentSelection.includes(v) ? 'selected' : '';
+                    return `<option value="${v}" ${selected}>${v}</option>`;
+                }).join('')}
+            `;
+        }
+
+        // Update department filter based on selected division
+        function updateAdvancedDependentFilters(divisionIndex, divisionDim) {
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            
+            // Find corresponding department index
+            let departmentIndex = -1;
+            if (divisionIndex === 0) departmentIndex = 1; // Provider division -> department
+            else if (divisionIndex === 4) departmentIndex = 3; // Receiver division -> department
+            
+            if (departmentIndex >= 0) {
+                updateDepartmentByDivision(departmentIndex);
+            }
+        }
+
+        // Update department based on selected division
+        function updateDepartmentByDivision(departmentIndex) {
+            const dimensions = document.getElementById('sankeyDimension').value.split(',');
+            const departmentDim = dimensions[departmentIndex];
+            const departmentSelect = document.getElementById(`filter_${departmentIndex}`);
+            
+            if (!departmentSelect) return;
+            
+            // Find corresponding division
+            let divisionIndex = -1;
+            if (departmentIndex === 1) divisionIndex = 0; // Provider
+            else if (departmentIndex === 3) divisionIndex = 4; // Receiver
+            
+            if (divisionIndex < 0) return;
+            
+            const divisionDim = dimensions[divisionIndex];
+            const divisionSelect = document.getElementById(`filter_${divisionIndex}`);
+            
+            // Get selected divisions
+            let selectedDivisions = [];
+            if (divisionSelect) {
+                selectedDivisions = Array.from(divisionSelect.selectedOptions)
+                    .map(o => o.value)
+                    .filter(v => v);
+            }
+            
+            // Build available departments
+            let availableDepartments = new Set();
+            
+            if (selectedDivisions.length > 0) {
+                currentData.forEach(row => {
+                    if (selectedDivisions.includes(row[divisionDim]) && row[departmentDim]) {
+                        availableDepartments.add(row[departmentDim]);
+                    }
+                });
+            } else {
+                currentData.forEach(row => {
+                    if (row[departmentDim]) {
+                        availableDepartments.add(row[departmentDim]);
+                    }
+                });
+            }
+            
+            // Update options
+            const sortedDepartments = Array.from(availableDepartments).sort();
+            const currentSelection = Array.from(departmentSelect.selectedOptions)
+                .map(o => o.value)
+                .filter(v => v);
+            
+            departmentSelect.innerHTML = `
+                <option value="">-- ทั้งหมด --</option>
+                ${sortedDepartments.map(v => {
+                    const selected = currentSelection.includes(v) ? 'selected' : '';
+                    return `<option value="${v}" ${selected}>${v}</option>`;
+                }).join('')}
+            `;
+            
+            if (sortedDepartments.length === 0 && selectedDivisions.length > 0) {
+                departmentSelect.innerHTML = '<option value="">-- ไม่พบฝ่ายในสายงานที่เลือก --</option>';
+            }
+        }
+
+
 
         // Create cascading filters for hierarchical data
         function createCascadingFilters(dimensions, container) {
